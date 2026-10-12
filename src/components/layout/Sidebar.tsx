@@ -1,7 +1,8 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Upload, BarChart2, TrendingUp,
-  Target, GitCompare, FileText, BookOpen, Settings
+  Target, GitCompare, FileText, BookOpen, Settings,
+  User, BookMarked
 } from 'lucide-react'
 import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
@@ -16,10 +17,12 @@ const navItems = [
   { to: '/upload', icon: Upload, key: 'nav_upload' as const },
   { to: '/analysis', icon: BarChart2, key: 'nav_analysis' as const },
   { to: '/progress', icon: TrendingUp, key: 'nav_progress' as const },
+  { to: '/student', icon: User, key: 'nav_student' as const },
   { to: '/gap', icon: Target, key: 'nav_gap' as const },
   { to: '/comparison', icon: GitCompare, key: 'nav_comparison' as const },
   { to: '/reports', icon: FileText, key: 'nav_reports' as const },
   { to: '/outcomes', icon: BookOpen, key: 'nav_outcomes' as const },
+  { to: '/methodology', icon: BookMarked, key: 'nav_methodology' as const },
   { to: '/settings', icon: Settings, key: 'nav_settings' as const },
 ]
 

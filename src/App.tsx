@@ -10,6 +10,8 @@ import Comparison from '@/pages/Comparison'
 import Reports from '@/pages/Reports'
 import Outcomes from '@/pages/Outcomes'
 import Settings from '@/pages/Settings'
+import StudentProfile from '@/pages/StudentProfile'
+import Methodology from '@/pages/Methodology'
 import type { Language } from '@/types'
 import { getCurrentLanguage, setLanguage } from '@/i18n/translations'
 
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="/comparison" element={<Comparison lang={lang} />} />
           <Route path="/reports" element={<Reports lang={lang} />} />
           <Route path="/outcomes" element={<Outcomes lang={lang} />} />
+          <Route path="/student" element={<StudentProfile lang={lang} />} />
+          <Route path="/methodology" element={<Methodology lang={lang} />} />
           <Route path="/settings" element={<Settings lang={lang} onChangeLang={changeLanguage} />} />
         </Route>
       </Routes>
