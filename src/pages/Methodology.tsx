@@ -81,7 +81,7 @@ export default function Methodology({ lang }: MethodologyProps) {
           <h3 className="text-lg font-semibold text-gray-500 mb-1">
             Student Achievement Data Analysis Platform
           </h3>
-          <p className="text-gray-400 text-sm">مدرسة خالد بن الوليد · فريق جودة الإنجاز</p>
+          <p className="text-gray-400 text-sm">مدرسة خالد بن الوليد · فريق جودة انجازات الطلبة</p>
         </div>
 
         {/* Section 1: Mission */}
@@ -90,7 +90,7 @@ export default function Methodology({ lang }: MethodologyProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div className="bg-primary-50 dark:bg-primary-900/20 rounded-lg p-4 border border-primary-100 dark:border-primary-800">
               <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                تهدف هذه المنصة إلى تمكين فريق جودة الإنجاز من تحليل بيانات إنجازات الطلاب بشكل شامل،
+                تهدف هذه المنصة إلى تمكين فريق جودة انجازات الطلبة من تحليل بيانات إنجازات الطلاب بشكل شامل،
                 وتتبع التقدم الفردي والجماعي عبر السنوات الأكاديمية، وتحديد الفجوات في مخرجات التعلم،
                 واتخاذ قرارات تعليمية مبنية على البيانات.
               </p>
@@ -404,7 +404,7 @@ export default function Methodology({ lang }: MethodologyProps) {
         </section>
 
         <div className="border-t pt-4 text-sm text-gray-400 flex items-center justify-between">
-          <span>مدرسة خالد بن الوليد · فريق جودة الإنجاز</span>
+          <span>مدرسة خالد بن الوليد · فريق جودة انجازات الطلبة</span>
           <span>{lang === 'ar' ? 'منصة تحليل الإنجاز' : 'Achievement Analysis Platform'}</span>
         </div>
       </div>

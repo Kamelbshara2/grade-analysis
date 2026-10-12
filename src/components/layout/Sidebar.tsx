@@ -72,7 +72,7 @@ export default function Sidebar({ lang }: SidebarProps) {
             {ar ? 'مدرسة خالد بن الوليد' : 'Khalid bin Al-Walid'}
           </p>
           <p className="text-gray-400 text-[10px] leading-tight truncate">
-            {ar ? 'فريق جودة الإنجاز' : 'Achievement Quality'}
+            {ar ? 'فريق جودة انجازات الطلبة' : 'Achievement Quality'}
           </p>
         </div>
       </div>
