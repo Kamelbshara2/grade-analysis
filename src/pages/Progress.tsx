@@ -14,7 +14,7 @@ interface ProgressProps {
 
 const CATEGORY_STYLE: Record<string, string> = {
   significant_progress: 'text-green-600 font-semibold',
-  slight_progress: 'text-lime-600',
+  slight_progress: 'text-blue-500', // merged into stable
   stable: 'text-blue-500',
   regression: 'text-red-500',
   no_baseline: 'text-gray-400',
@@ -22,14 +22,17 @@ const CATEGORY_STYLE: Record<string, string> = {
 
 const CATEGORY_LABEL_KEY: Record<string, 'progress_significant' | 'progress_slight' | 'progress_stable' | 'progress_regression' | 'progress_no_baseline'> = {
   significant_progress: 'progress_significant',
-  slight_progress: 'progress_slight',
+  slight_progress: 'progress_stable', // merged into stable
   stable: 'progress_stable',
   regression: 'progress_regression',
   no_baseline: 'progress_no_baseline',
 }
 
 export default function Progress({ lang }: ProgressProps) {
-  const [filter, setFilter] = useState<AnalysisFilter>({ semester: 'annual' })
+  const [filter, setFilter] = useState<AnalysisFilter>(() => {
+    const ys = dataStore.getYears()
+    return { semester: 'annual', yearId: ys[ys.length - 1] }
+  })
   const [baselineMode, setBaselineMode] = useState<'previous' | 'diagnostic'>('previous')
   const [view, setView] = useState<'summary' | 'semester'>('summary')
 

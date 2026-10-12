@@ -7,3 +7,7 @@ ruvector.db
 *.local
 .env
 .env.*
+
+# Agent internal files
+agentdb.rvf
+agentdb.rvf.lock

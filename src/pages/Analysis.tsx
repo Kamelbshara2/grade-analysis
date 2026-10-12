@@ -14,8 +14,9 @@ interface AnalysisProps {
 }
 
 export default function Analysis({ lang }: AnalysisProps) {
-  const [filter, setFilter] = useState<AnalysisFilter>({
-    semester: 'annual',
+  const [filter, setFilter] = useState<AnalysisFilter>(() => {
+    const years = dataStore.getYears()
+    return { semester: 'annual', yearId: years[years.length - 1] }
   })
 
   const records = useMemo(() => {

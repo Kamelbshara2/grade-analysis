@@ -186,20 +186,12 @@ export function computeProgress(
 }
 
 function classifyProgress(
-  baseline: number,
-  current: number,
+  _baseline: number,
+  _current: number,
   diff: number
 ): ProgressResult['category'] {
-  // Special rule for students who were above 90
-  if (baseline >= 90) {
-    if (current >= 90) return 'stable' // stayed in 90+ zone
-    const dropBelow90 = 90 - current
-    if (dropBelow90 <= 4) return 'stable' // dropped slightly below 90
-    return 'regression'
-  }
-
   if (diff > 4) return 'significant_progress'
-  if (diff >= 0) return 'slight_progress'
+  if (diff >= 0) return 'stable'
   return 'regression'
 }
 
