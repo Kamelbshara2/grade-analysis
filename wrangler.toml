@@ -5,4 +5,4 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "grade_analysis"
-database_id = "placeholder-replace-after-creation"
+database_id = "a1dad8da-2def-498c-95d3-b158fe12ee61"
