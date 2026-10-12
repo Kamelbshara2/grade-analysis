@@ -21,10 +21,27 @@
 }
 
 @layer components {
+
+  /* ── Cards ── */
   .card {
     @apply bg-white dark:bg-gray-900 rounded-xl shadow-sm border p-4;
   }
 
+  .card-flat {
+    @apply bg-white dark:bg-gray-900 rounded-xl border p-4;
+  }
+
+  /* KPI metric card — used on Dashboard */
+  .metric-card {
+    @apply bg-white dark:bg-gray-900 rounded-xl shadow-sm border p-5 flex flex-col gap-1.5;
+  }
+
+  /* Accent left-border card */
+  .card-accent {
+    @apply bg-white dark:bg-gray-900 rounded-xl shadow-sm border-y border-e border-s-4 p-4;
+  }
+
+  /* ── Buttons ── */
   .btn-primary {
     @apply bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -37,6 +54,7 @@
     @apply hover:bg-gray-100 dark:hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors;
   }
 
+  /* ── Form controls ── */
   .input {
     @apply border rounded-lg px-3 py-2 w-full bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm;
   }
@@ -45,26 +63,53 @@
     @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
   }
 
+  /* ── Badges ── */
+  .badge {
+    @apply px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
   .badge-critical {
-    @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply badge bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400;
   }
 
   .badge-high {
-    @apply bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply badge bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400;
   }
 
   .badge-medium {
-    @apply bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply badge bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400;
   }
 
   .badge-low {
-    @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply badge bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400;
   }
 
+  /* Performance rate colour helpers */
+  .rate-excellent { @apply text-green-600 dark:text-green-400 font-semibold; }
+  .rate-good      { @apply text-blue-600 dark:text-blue-400; }
+  .rate-fair      { @apply text-amber-600 dark:text-amber-400; }
+  .rate-poor      { @apply text-red-600 dark:text-red-400 font-semibold; }
+
+  /* ── Stat Card (legacy, kept for backward compat) ── */
   .stat-card {
     @apply card flex flex-col gap-1;
   }
 
+  /* ── Sidebar nav section header ── */
+  .nav-section {
+    @apply text-[10px] font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase px-3 pt-4 pb-1.5 select-none;
+  }
+
+  /* ── Alert banner ── */
+  .alert-warn {
+    @apply bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-4 py-3 text-sm text-amber-800 dark:text-amber-300;
+  }
+
+  .alert-info {
+    @apply bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg px-4 py-3 text-sm text-blue-800 dark:text-blue-300;
+  }
+
+  /* ── Tables ── */
   .table-base {
     @apply w-full text-sm;
   }
@@ -84,18 +129,25 @@
   .table-base tr:hover td {
     @apply bg-gray-50 dark:bg-gray-800/50;
   }
+
+  /* Performance band colours for table cells */
+  .cell-excellent { @apply bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-semibold; }
+  .cell-good      { @apply bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400; }
+  .cell-fair      { @apply bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400; }
+  .cell-poor      { @apply bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-semibold; }
+}
+
+/* ── Inline pass-rate bar (no recharts needed) ── */
+.pbar-track {
+  @apply h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden;
+}
+
+.pbar-fill {
+  @apply h-2 rounded-full transition-all duration-500;
 }
 
 @media print {
-  .no-print {
-    display: none !important;
-  }
-
-  .print-break {
-    page-break-before: always;
-  }
-
-  body {
-    background: white;
-  }
+  .no-print { display: none !important; }
+  .print-break { page-break-before: always; }
+  body { background: white; }
 }
