@@ -291,6 +291,81 @@ export function computeSemesterProgress(
   })
 }
 
+// ===== MULTI-YEAR TRAJECTORY =====
+export interface MultiYearRow {
+  studentId: string
+  studentName: string
+  scores: (number | null)[]   // one entry per year, in year order
+  diffs: (number | null)[]    // diff[i] = scores[i+1] - scores[i]
+  categories: (ProgressResult['category'] | null)[]
+  overallDiff: number | null  // last year - first year with data
+  overallCategory: ProgressResult['category'] | null
+}
+
+export function computeMultiYearProgress(
+  allYearRecords: { yearId: string; records: StudentRecord[] }[],
+  subject: SubjectCode,
+  semester: Semester | 'annual'
+): MultiYearRow[] {
+  // Build map: studentId -> { name, scores by year index }
+  const studentMap = new Map<string, { name: string; scores: (number | null)[] }>()
+
+  for (let yi = 0; yi < allYearRecords.length; yi++) {
+    for (const r of allYearRecords[yi].records) {
+      if (!studentMap.has(r.student.id)) {
+        studentMap.set(r.student.id, {
+          name: r.student.name,
+          scores: new Array(allYearRecords.length).fill(null),
+        })
+      }
+      const entry = studentMap.get(r.student.id)!
+      const g = r.grades[subject]
+      if (!g) continue
+      let score: number | null = null
+      if (semester === 1) score = g.s1
+      else if (semester === 2) score = g.s2
+      else if (semester === 3) score = g.s3
+      else score = g.annual
+      entry.scores[yi] = score
+    }
+  }
+
+  const rows: MultiYearRow[] = []
+  for (const [studentId, { name, scores }] of studentMap) {
+    const diffs: (number | null)[] = []
+    const categories: (ProgressResult['category'] | null)[] = []
+
+    for (let i = 0; i < scores.length - 1; i++) {
+      const a = scores[i]
+      const b = scores[i + 1]
+      if (a !== null && b !== null) {
+        const d = b - a
+        diffs.push(d)
+        categories.push(classifyProgress(a, b, d))
+      } else {
+        diffs.push(null)
+        categories.push(null)
+      }
+    }
+
+    // Overall: first non-null vs last non-null
+    const firstIdx = scores.findIndex(s => s !== null)
+    let lastIdx = -1
+    for (let i = scores.length - 1; i >= 0; i--) { if (scores[i] !== null) { lastIdx = i; break } }
+
+    let overallDiff: number | null = null
+    let overallCategory: ProgressResult['category'] | null = null
+    if (firstIdx !== -1 && lastIdx !== -1 && firstIdx !== lastIdx) {
+      overallDiff = scores[lastIdx]! - scores[firstIdx]!
+      overallCategory = classifyProgress(scores[firstIdx]!, scores[lastIdx]!, overallDiff)
+    }
+
+    rows.push({ studentId, studentName: name, scores, diffs, categories, overallDiff, overallCategory })
+  }
+
+  return rows.sort((a, b) => a.studentName.localeCompare(b.studentName))
+}
+
 // ===== GAP ANALYSIS =====
 export interface GapResult {
   outcomeId: string;
