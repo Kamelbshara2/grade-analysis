@@ -24,7 +24,7 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter basename="/student-dev">
+    <BrowserRouter>
       <Routes>
         <Route element={<Layout lang={lang} onChangeLang={changeLanguage} />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
