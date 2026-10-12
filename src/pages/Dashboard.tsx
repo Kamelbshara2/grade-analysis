@@ -212,7 +212,7 @@ export default function Dashboard({ lang }: DashboardProps) {
             {ar ? 'لوحة الإنجاز المدرسي' : 'School Achievement Dashboard'}
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {ar ? 'مدرسة خالد بن الوليد — فريق جودة الإنجاز' : 'Khalid bin Al-Walid — Achievement Quality Team'}
+            {ar ? 'مدرسة خالد بن الوليد — فريق جودة انجازات الطلبة' : 'Khalid bin Al-Walid — Achievement Quality Team'}
           </p>
         </div>
         <div className="flex items-center gap-2">
