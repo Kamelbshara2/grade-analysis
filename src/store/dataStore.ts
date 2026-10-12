@@ -1,6 +1,7 @@
 import type { AppData, YearData, StudentRecord, DiagnosticScore, LearningOutcome, OutcomeScore } from '@/types'
 
 const STORAGE_KEY = 'grade_analysis_v1'
+const API_LOADED_KEY = 'grade_analysis_api_loaded'
 
 function loadData(): AppData {
   try {
@@ -21,8 +22,44 @@ function saveData(data: AppData): void {
 }
 
 let _data: AppData = loadData()
+let _initPromise: Promise<void> | null = null
+
+/** Merge API data into existing data without overwriting user-added outcomes/scores */
+function mergeApiData(apiData: AppData): void {
+  // Merge year records from API (API is source of truth for grade records)
+  for (const [yearId, yearData] of Object.entries(apiData.years)) {
+    if (!_data.years[yearId] || _data.years[yearId].records.length === 0) {
+      _data.years[yearId] = yearData
+    }
+  }
+  // Keep user's local learningOutcomes and outcomeScores
+  saveData(_data)
+}
 
 export const dataStore = {
+  // ===== INIT FROM API =====
+  async initFromAPI(): Promise<void> {
+    if (_initPromise) return _initPromise
+    _initPromise = (async () => {
+      try {
+        const res = await fetch('/api/data')
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const apiData = await res.json() as AppData
+        if (apiData.years && Object.keys(apiData.years).length > 0) {
+          mergeApiData(apiData)
+        }
+      } catch (err) {
+        console.warn('Failed to load data from API, using localStorage only:', err)
+      }
+    })()
+    return _initPromise
+  },
+
+  /** Reload in-memory data from localStorage (call after external mutation) */
+  reload(): void {
+    _data = loadData()
+  },
+
   // ===== YEARS =====
   getYears(): string[] {
     return Object.keys(_data.years).sort()
@@ -107,6 +144,8 @@ export const dataStore = {
   clearAll(): void {
     _data = { years: {}, learningOutcomes: [], outcomeScores: [] }
     localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(API_LOADED_KEY)
+    _initPromise = null
   },
 
   getStorageSizeKB(): number {

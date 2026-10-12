@@ -26,7 +26,7 @@ const PRIORITY_LABEL: Record<string, 'gap_critical' | 'gap_high' | 'gap_medium' 
 }
 
 export default function GapAnalysis({ lang }: GapAnalysisProps) {
-  const [yearId, setYearId] = useState('')
+  const [yearId, setYearId] = useState(() => { const ys = dataStore.getYears(); return ys[ys.length - 1] ?? '' })
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [importMsg, setImportMsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
