@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    direction: rtl;
+  }
+
+  html {
+    font-family: 'Tajawal', sans-serif;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100;
+  }
+
+  * {
+    @apply border-gray-200 dark:border-gray-700;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white dark:bg-gray-900 rounded-xl shadow-sm border p-4;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg font-medium transition-colors;
+  }
+
+  .btn-ghost {
+    @apply hover:bg-gray-100 dark:hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors;
+  }
+
+  .input {
+    @apply border rounded-lg px-3 py-2 w-full bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
+  }
+
+  .badge-critical {
+    @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-high {
+    @apply bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-medium {
+    @apply bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-low {
+    @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .stat-card {
+    @apply card flex flex-col gap-1;
+  }
+
+  .table-base {
+    @apply w-full text-sm;
+  }
+
+  .table-base th {
+    @apply bg-gray-50 dark:bg-gray-800 px-3 py-2 text-start font-semibold text-gray-600 dark:text-gray-400 border-b;
+  }
+
+  .table-base td {
+    @apply px-3 py-2 border-b border-gray-100 dark:border-gray-800;
+  }
+
+  .table-base tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .table-base tr:hover td {
+    @apply bg-gray-50 dark:bg-gray-800/50;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-break {
+    page-break-before: always;
+  }
+
+  body {
+    background: white;
+  }
+}
