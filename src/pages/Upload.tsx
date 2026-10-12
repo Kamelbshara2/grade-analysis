@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react'
-import { Upload as UploadIcon, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react'
+import { Upload as UploadIcon, CheckCircle, AlertCircle, FileSpreadsheet, Download } from 'lucide-react'
 import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
 import { parseAnnualGradeFile, parseNationalityFile } from '@/utils/excelParser'
 import { parseDiagnosticFile } from '@/utils/diagnosticParser'
 import { dataStore } from '@/store/dataStore'
 import type { UploadResult } from '@/types'
+import { downloadAnnualTemplate, downloadDiagnosticTemplate, downloadNationalityTemplate } from '@/utils/templateGenerator'
 
 interface UploadProps {
   lang: Language
@@ -155,6 +156,29 @@ export default function Upload({ lang }: UploadProps) {
           />
         </div>
       )}
+
+      {/* Template download */}
+      <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 rounded-lg px-4 py-3">
+        <div>
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {lang === 'ar' ? 'تنزيل نموذج فارغ' : 'Download Empty Template'}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {lang === 'ar' ? 'قم بتعبئة النموذج ثم ارفعه هنا' : 'Fill in the template then upload it here'}
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            if (mode === 'annual') downloadAnnualTemplate()
+            else if (mode === 'diagnostic') downloadDiagnosticTemplate()
+            else downloadNationalityTemplate()
+          }}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors"
+        >
+          <Download size={15} />
+          {lang === 'ar' ? 'تنزيل' : 'Download'}
+        </button>
+      </div>
 
       {/* Drop zone */}
       <div
