@@ -1,0 +1,7 @@
+name = "grade-analysis-proxy"
+main = "index.js"
+compatibility_date = "2024-09-23"
+
+routes = [
+  { pattern = "kbws.app/student-dev*", zone_name = "kbws.app" }
+]

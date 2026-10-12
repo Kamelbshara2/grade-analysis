@@ -2,6 +2,8 @@ node_modules/
 dist/
 .wrangler/
 .claude-flow/
+.swarm/
+ruvector.db
 *.local
 .env
 .env.*

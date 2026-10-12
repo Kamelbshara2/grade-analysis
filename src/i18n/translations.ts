@@ -192,6 +192,45 @@ const translations = {
     settings_data_management: 'إدارة البيانات',
     settings_storage_used: 'المساحة المستخدمة',
 
+    // Student Tracker
+    nav_student: 'تتبع الطالب',
+    nav_methodology: 'المنهجية',
+    student_title: 'تتبع الطالب الفردي',
+    student_search: 'ابحث برقم الهوية أو الاسم',
+    student_not_found: 'لم يتم العثور على الطالب',
+    student_id: 'رقم الهوية',
+    student_name: 'اسم الطالب',
+    student_history: 'السجل الدراسي',
+    student_trend: 'منحنى التقدم',
+
+    // Methodology
+    methodology_title: 'المنهجية والمعادلات الإحصائية',
+    methodology_mission: 'رسالة المنصة',
+    methodology_data_structure: 'هيكل البيانات',
+    methodology_variables: 'المتغيرات الإحصائية',
+    methodology_bands: 'نطاقات الدرجات',
+    methodology_progress: 'تصنيف التقدم',
+    methodology_normal_dist: 'التوزيع الطبيعي',
+    methodology_gap_priority: 'أولويات تحليل الفجوات',
+
+    // Distribution stats
+    dist_mean: 'المتوسط',
+    dist_median: 'الوسيط',
+    dist_std: 'الانحراف المعياري',
+    dist_variance: 'التباين',
+    dist_skewness: 'الالتواء',
+    dist_kurtosis: 'التفرطح',
+    dist_symmetric: 'توزيع متماثل تقريباً',
+    dist_left_skew: 'ملتوٍ يساراً (الذيل الأيسر)',
+    dist_right_skew: 'ملتوٍ يميناً (الذيل الأيمن)',
+    dist_platykurtic: 'مفلطح (أقل تركزاً)',
+    dist_leptokurtic: 'مدبب (أكثر تركزاً)',
+    dist_mesokurtic: 'طبيعي التفرطح',
+
+    // Reports extra
+    report_section_analysis: 'تحليل الفصول',
+    report_normal_dist: 'التوزيع الطبيعي للدرجات',
+
     // Errors
     err_no_year: 'يرجى إدخال العام الدراسي',
     err_invalid_file: 'الملف غير صحيح',
@@ -373,6 +412,45 @@ const translations = {
     settings_clear_confirm: 'Are you sure you want to clear all data? This cannot be undone.',
     settings_data_management: 'Data Management',
     settings_storage_used: 'Storage Used',
+
+    // Student Tracker
+    nav_student: 'Student Tracker',
+    nav_methodology: 'Methodology',
+    student_title: 'Individual Student Tracker',
+    student_search: 'Search by ID or name',
+    student_not_found: 'Student not found',
+    student_id: 'Student ID',
+    student_name: 'Student Name',
+    student_history: 'Academic History',
+    student_trend: 'Progress Trend',
+
+    // Methodology
+    methodology_title: 'Methodology & Statistical Equations',
+    methodology_mission: 'Platform Mission',
+    methodology_data_structure: 'Data Structure',
+    methodology_variables: 'Statistical Variables',
+    methodology_bands: 'Score Bands',
+    methodology_progress: 'Progress Classification',
+    methodology_normal_dist: 'Normal Distribution',
+    methodology_gap_priority: 'Gap Analysis Priorities',
+
+    // Distribution stats
+    dist_mean: 'Mean',
+    dist_median: 'Median',
+    dist_std: 'Standard Deviation',
+    dist_variance: 'Variance',
+    dist_skewness: 'Skewness',
+    dist_kurtosis: 'Kurtosis',
+    dist_symmetric: 'Approximately symmetric',
+    dist_left_skew: 'Negatively skewed (left tail)',
+    dist_right_skew: 'Positively skewed (right tail)',
+    dist_platykurtic: 'Platykurtic (flat distribution)',
+    dist_leptokurtic: 'Leptokurtic (peaked distribution)',
+    dist_mesokurtic: 'Mesokurtic (normal peakedness)',
+
+    // Reports extra
+    report_section_analysis: 'Section Analysis',
+    report_normal_dist: 'Score Normal Distribution',
 
     err_no_year: 'Please enter the academic year',
     err_invalid_file: 'Invalid file',
