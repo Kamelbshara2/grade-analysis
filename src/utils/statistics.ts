@@ -1,0 +1,410 @@
+import type {
+  StudentRecord, SubjectCode, SubjectStats, ProgressResult,
+  Cycle, Semester, AnalysisFilter, Nationality
+} from '@/types'
+import { getPassMark, getCycle } from './subjectMapping'
+
+// ===== FILTER =====
+export function filterRecords(
+  records: StudentRecord[],
+  filter: AnalysisFilter
+): StudentRecord[] {
+  return records.filter(r => {
+    if (filter.grade && r.grade !== filter.grade) return false
+    if (filter.section && r.section !== filter.section) return false
+    if (filter.track && r.track !== filter.track) return false
+    if (filter.nationality && filter.nationality !== 'unknown' && r.student.nationality !== filter.nationality) return false
+    return true
+  })
+}
+
+// ===== EXTRACT SCORES =====
+export function extractScores(
+  records: StudentRecord[],
+  subject: SubjectCode,
+  semester: Semester | 'annual'
+): number[] {
+  const scores: number[] = []
+  for (const r of records) {
+    const g = r.grades[subject]
+    if (!g) continue
+    let score: number | null = null
+    if (semester === 1) score = g.s1
+    else if (semester === 2) score = g.s2
+    else if (semester === 3) score = g.s3
+    else score = g.annual
+    if (score !== null) scores.push(score)
+  }
+  return scores
+}
+
+// ===== BASIC STATS =====
+export function computeStats(scores: number[], cycle: Cycle): Omit<SubjectStats, 'subjectCode'> {
+  const n = scores.length
+  if (n === 0) {
+    return {
+      count: 0, passCount: 0, failCount: 0, above90Count: 0,
+      passRate: 0, failRate: 0, above90Rate: 0,
+      mean: 0, median: 0, stdDev: 0, variance: 0,
+      q1: 0, q3: 0, iqr: 0, min: 0, max: 0,
+      band_low: 0, band_low_mid: 0, band_mid: 0, band_high: 0, band_top: 0,
+    }
+  }
+
+  const passMark = getPassMark(cycle)
+  const sorted = [...scores].sort((a, b) => a - b)
+
+  const mean = scores.reduce((s, x) => s + x, 0) / n
+  const variance = scores.reduce((s, x) => s + (x - mean) ** 2, 0) / n
+  const stdDev = Math.sqrt(variance)
+
+  const median = percentile(sorted, 50)
+  const q1 = percentile(sorted, 25)
+  const q3 = percentile(sorted, 75)
+
+  const passCount = scores.filter(s => s >= passMark).length
+  const failCount = n - passCount
+  const above90Count = scores.filter(s => s >= 90).length
+
+  const lowMidMin = passMark // 50 or 60
+
+  return {
+    count: n,
+    passCount,
+    failCount,
+    above90Count,
+    passRate: (passCount / n) * 100,
+    failRate: (failCount / n) * 100,
+    above90Rate: (above90Count / n) * 100,
+    mean,
+    median,
+    stdDev,
+    variance,
+    q1,
+    q3,
+    iqr: q3 - q1,
+    min: sorted[0],
+    max: sorted[n - 1],
+    band_low: (scores.filter(s => s < passMark).length / n) * 100,
+    band_low_mid: (scores.filter(s => s >= lowMidMin && s < 70).length / n) * 100,
+    band_mid: (scores.filter(s => s >= 70 && s < 80).length / n) * 100,
+    band_high: (scores.filter(s => s >= 80 && s < 90).length / n) * 100,
+    band_top: (scores.filter(s => s >= 90).length / n) * 100,
+  }
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0
+  const idx = (p / 100) * (sorted.length - 1)
+  const lo = Math.floor(idx)
+  const hi = Math.ceil(idx)
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo)
+}
+
+export function computeSubjectStats(
+  records: StudentRecord[],
+  subject: SubjectCode,
+  semester: Semester | 'annual',
+  cycle: Cycle
+): SubjectStats {
+  const scores = extractScores(records, subject, semester)
+  return { subjectCode: subject, ...computeStats(scores, cycle) }
+}
+
+// ===== PROGRESS CALCULATION =====
+export function computeProgress(
+  currentRecords: StudentRecord[],
+  previousRecords: StudentRecord[],
+  diagnosticScores: Array<{ studentId: string; subjectCode: SubjectCode; score: number }>,
+  subject: SubjectCode,
+  semester: Semester | 'annual',
+  baselineMode: 'previous' | 'diagnostic'
+): ProgressResult[] {
+  const prevMap = new Map<string, StudentRecord>()
+  for (const r of previousRecords) prevMap.set(r.student.id, r)
+
+  const diagMap = new Map<string, number>()
+  for (const d of diagnosticScores) {
+    if (d.subjectCode === subject) diagMap.set(d.studentId, d.score)
+  }
+
+  return currentRecords.map(r => {
+    const g = r.grades[subject]
+    let currentScore: number | null = null
+    if (g) {
+      if (semester === 1) currentScore = g.s1
+      else if (semester === 2) currentScore = g.s2
+      else if (semester === 3) currentScore = g.s3
+      else currentScore = g.annual
+    }
+
+    // Get baseline
+    let baselineScore: number | null = null
+    let baselineType: ProgressResult['baselineType'] = 'none'
+
+    const prevRecord = prevMap.get(r.student.id)
+    const diagScore = diagMap.get(r.student.id)
+
+    if (baselineMode === 'previous' && prevRecord) {
+      const pg = prevRecord.grades[subject]
+      if (pg) {
+        baselineScore = pg.annual
+        baselineType = 'previous'
+      }
+    }
+
+    if (baselineScore === null && diagScore !== undefined) {
+      baselineScore = diagScore
+      baselineType = 'diagnostic'
+    }
+
+    if (baselineScore === null || currentScore === null) {
+      return {
+        studentId: r.student.id,
+        studentName: r.student.name,
+        baselineScore,
+        baselineType: 'none',
+        currentScore,
+        diff: null,
+        category: 'no_baseline' as const,
+      }
+    }
+
+    const diff = currentScore - baselineScore
+    const category = classifyProgress(baselineScore, currentScore, diff)
+
+    return {
+      studentId: r.student.id,
+      studentName: r.student.name,
+      baselineScore,
+      baselineType,
+      currentScore,
+      diff,
+      category,
+    }
+  })
+}
+
+function classifyProgress(
+  baseline: number,
+  current: number,
+  diff: number
+): ProgressResult['category'] {
+  // Special rule for students who were above 90
+  if (baseline >= 90) {
+    if (current >= 90) return 'stable' // stayed in 90+ zone
+    const dropBelow90 = 90 - current
+    if (dropBelow90 <= 4) return 'stable' // dropped slightly below 90
+    return 'regression'
+  }
+
+  if (diff > 4) return 'significant_progress'
+  if (diff >= 0) return 'slight_progress'
+  return 'regression'
+}
+
+// ===== PROGRESS COMPARISON BETWEEN SEMESTERS =====
+// Compare S3 vs weighted(S1+S2)
+export function computeWeightedS1S2(
+  records: StudentRecord[],
+  subject: SubjectCode
+): Map<string, number> {
+  const result = new Map<string, number>()
+  for (const r of records) {
+    const g = r.grades[subject]
+    if (!g || g.s1 === null || g.s2 === null) continue
+    // Weighted average: s1 has weight 35, s2 has weight 30
+    const weighted = (g.s1 * 35 + g.s2 * 30) / 65
+    result.set(r.student.id, weighted)
+  }
+  return result
+}
+
+// ===== SEMESTER PROGRESS =====
+export interface SemesterProgress {
+  studentId: string;
+  studentName: string;
+  s1: number | null;
+  s2: number | null;
+  s3: number | null;
+  annual: number | null;
+  baselineScore: number | null;
+  baselineType: string;
+  // Progress categories
+  baseToS1: ProgressResult['category'] | null;
+  s1ToS2: ProgressResult['category'] | null;
+  s12ToS3: ProgressResult['category'] | null;
+}
+
+export function computeSemesterProgress(
+  records: StudentRecord[],
+  previousRecords: StudentRecord[],
+  diagnosticScores: Array<{ studentId: string; subjectCode: SubjectCode; score: number }>,
+  subject: SubjectCode,
+  baselineMode: 'previous' | 'diagnostic'
+): SemesterProgress[] {
+  const prevMap = new Map<string, StudentRecord>()
+  for (const r of previousRecords) prevMap.set(r.student.id, r)
+
+  const diagMap = new Map<string, number>()
+  for (const d of diagnosticScores) {
+    if (d.subjectCode === subject) diagMap.set(d.studentId, d.score)
+  }
+
+  return records.map(r => {
+    const g = r.grades[subject]
+    const s1 = g?.s1 ?? null
+    const s2 = g?.s2 ?? null
+    const s3 = g?.s3 ?? null
+    const annual = g?.annual ?? null
+
+    let baselineScore: number | null = null
+    let baselineType = 'none'
+    const prevRecord = prevMap.get(r.student.id)
+    const diagScore = diagMap.get(r.student.id) ?? null
+
+    if (baselineMode === 'previous' && prevRecord?.grades[subject]?.annual !== undefined) {
+      baselineScore = prevRecord.grades[subject]!.annual
+      if (baselineScore !== null) baselineType = 'previous'
+    }
+    if (baselineScore === null && diagScore !== null) {
+      baselineScore = diagScore
+      baselineType = 'diagnostic'
+    }
+
+    const baseToS1 = baselineScore !== null && s1 !== null
+      ? classifyProgress(baselineScore, s1, s1 - baselineScore)
+      : null
+
+    const s1ToS2 = s1 !== null && s2 !== null
+      ? classifyProgress(s1, s2, s2 - s1)
+      : null
+
+    let s12ToS3: ProgressResult['category'] | null = null
+    if (s1 !== null && s2 !== null && s3 !== null) {
+      const w = (s1 * 35 + s2 * 30) / 65
+      s12ToS3 = classifyProgress(w, s3, s3 - w)
+    }
+
+    return {
+      studentId: r.student.id,
+      studentName: r.student.name,
+      s1, s2, s3, annual,
+      baselineScore,
+      baselineType,
+      baseToS1,
+      s1ToS2,
+      s12ToS3,
+    }
+  })
+}
+
+// ===== GAP ANALYSIS =====
+export interface GapResult {
+  outcomeId: string;
+  outcomeCode: string;
+  descriptionAr: string;
+  descriptionEn: string;
+  masteryRate: number;   // % of students who mastered (>=70% of max)
+  priority: 'critical' | 'high' | 'medium' | 'low';
+}
+
+export function computeGapAnalysis(
+  outcomeScores: Array<{
+    studentId: string;
+    outcomeId: string;
+    outcomeCode: string;
+    descriptionAr: string;
+    descriptionEn: string;
+    score: number;
+    maxScore: number;
+  }>
+): GapResult[] {
+  const outcomeMap = new Map<string, {
+    code: string; descAr: string; descEn: string;
+    scores: number[]; masteryCount: number;
+  }>()
+
+  for (const os of outcomeScores) {
+    if (!outcomeMap.has(os.outcomeId)) {
+      outcomeMap.set(os.outcomeId, {
+        code: os.outcomeCode,
+        descAr: os.descriptionAr,
+        descEn: os.descriptionEn,
+        scores: [],
+        masteryCount: 0,
+      })
+    }
+    const entry = outcomeMap.get(os.outcomeId)!
+    const pct = (os.score / os.maxScore) * 100
+    entry.scores.push(pct)
+    if (pct >= 70) entry.masteryCount++
+  }
+
+  const results: GapResult[] = []
+  for (const [id, data] of outcomeMap) {
+    const masteryRate = data.scores.length > 0
+      ? (data.masteryCount / data.scores.length) * 100
+      : 0
+
+    const priority: GapResult['priority'] =
+      masteryRate < 40 ? 'critical' :
+      masteryRate < 60 ? 'high' :
+      masteryRate < 75 ? 'medium' : 'low'
+
+    results.push({
+      outcomeId: id,
+      outcomeCode: data.code,
+      descriptionAr: data.descAr,
+      descriptionEn: data.descEn,
+      masteryRate,
+      priority,
+    })
+  }
+
+  // Sort by mastery rate ascending (worst first), then add intelligent variation
+  results.sort((a, b) => a.masteryRate - b.masteryRate)
+
+  // Intelligent prioritization: within same priority level, vary order slightly
+  // to avoid always showing the same gaps. Use a stable but varied ordering.
+  return intelligentGapOrder(results)
+}
+
+function intelligentGapOrder(gaps: GapResult[]): GapResult[] {
+  // Group by priority
+  const groups: Record<string, GapResult[]> = {
+    critical: [], high: [], medium: [], low: []
+  }
+  for (const g of gaps) groups[g.priority].push(g)
+
+  // Within each group, sort by mastery rate (worst first) but apply
+  // a deterministic jitter based on outcome code hash to vary presentation
+  const jitteredSort = (arr: GapResult[]) => {
+    return arr.sort((a, b) => {
+      const diff = a.masteryRate - b.masteryRate
+      if (Math.abs(diff) > 5) return diff
+      // Near-equal mastery: use code hash for stable variation
+      return hashCode(a.outcomeCode) - hashCode(b.outcomeCode)
+    })
+  }
+
+  return [
+    ...jitteredSort(groups.critical),
+    ...jitteredSort(groups.high),
+    ...jitteredSort(groups.medium),
+    ...jitteredSort(groups.low),
+  ]
+}
+
+function hashCode(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
+  }
+  return h
+}
+
+// ===== ROUND =====
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100
+}
