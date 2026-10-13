@@ -148,6 +148,9 @@
 
 @media print {
   .no-print { display: none !important; }
-  .print-break { page-break-before: always; }
-  body { background: white; }
+  .print-break { page-break-after: always; break-after: page; }
+  .print-section { page-break-inside: avoid; break-inside: avoid; }
+  .print-page-cover { page-break-after: always; break-after: page; }
+  body { background: white !important; }
+  #print-root { box-shadow: none !important; border: none !important; }
 }
