@@ -4,15 +4,17 @@ import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
 import { parseAnnualGradeFile, parseNationalityFile } from '@/utils/excelParser'
 import { parseDiagnosticFile } from '@/utils/diagnosticParser'
+import { parseFormativeFile, parseExamFile } from '@/utils/formativeParser'
+import { parseTermFile } from '@/utils/termParser'
 import { dataStore } from '@/store/dataStore'
 import type { UploadResult } from '@/types'
-import { downloadAnnualTemplate, downloadDiagnosticTemplate, downloadNationalityTemplate } from '@/utils/templateGenerator'
+import { downloadAnnualTemplate, downloadDiagnosticTemplate, downloadNationalityTemplate, downloadFormativeTemplate, downloadExamTemplate, downloadTermTemplate } from '@/utils/templateGenerator'
 
 interface UploadProps {
   lang: Language
 }
 
-type UploadMode = 'annual' | 'diagnostic' | 'nationality'
+type UploadMode = 'annual' | 'diagnostic' | 'nationality' | 'formative' | 'exam' | 'term'
 
 interface UploadState {
   status: 'idle' | 'processing' | 'success' | 'error'
@@ -23,11 +25,12 @@ interface UploadState {
 export default function Upload({ lang }: UploadProps) {
   const [mode, setMode] = useState<UploadMode>('annual')
   const [yearId, setYearId] = useState('')
+  const [termSemester, setTermSemester] = useState<1 | 2 | 3>(1)
   const [state, setState] = useState<UploadState>({ status: 'idle' })
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
-    if (!yearId.trim() && mode !== 'nationality') {
+    if (!yearId.trim() && mode !== 'nationality') {  // nationality doesn't need a year
       setState({ status: 'error', error: t('err_no_year') })
       return
     }
@@ -70,6 +73,54 @@ export default function Upload({ lang }: UploadProps) {
             skipped: 0,
             errors: [],
             subjects: [],
+            sections: [],
+          },
+        })
+      } else if (mode === 'formative') {
+        const scores = parseFormativeFile(buffer, yearId.trim())
+        dataStore.importFormativeScores(yearId.trim(), scores)
+        const subjects = [...new Set(scores.map(s => s.subjectCode))]
+        setState({
+          status: 'success',
+          result: {
+            yearId: yearId.trim(),
+            totalRows: scores.length,
+            imported: scores.length,
+            skipped: 0,
+            errors: [],
+            subjects: subjects as any,
+            sections: [],
+          },
+        })
+      } else if (mode === 'exam') {
+        const scores = parseExamFile(buffer, yearId.trim())
+        dataStore.importExamScores(yearId.trim(), scores)
+        const subjects = [...new Set(scores.map(s => s.subjectCode))]
+        setState({
+          status: 'success',
+          result: {
+            yearId: yearId.trim(),
+            totalRows: scores.length,
+            imported: scores.length,
+            skipped: 0,
+            errors: [],
+            subjects: subjects as any,
+            sections: [],
+          },
+        })
+      } else if (mode === 'term') {
+        const scores = parseTermFile(buffer, yearId.trim(), termSemester)
+        dataStore.importTermScores(yearId.trim(), termSemester, scores)
+        const subjects = [...new Set(scores.map(s => s.subjectCode))]
+        setState({
+          status: 'success',
+          result: {
+            yearId: yearId.trim(),
+            totalRows: scores.length,
+            imported: scores.length,
+            skipped: 0,
+            errors: [],
+            subjects: subjects as any,
             sections: [],
           },
         })
@@ -120,6 +171,9 @@ export default function Upload({ lang }: UploadProps) {
     { key: 'annual', label: t('upload_annual') },
     { key: 'diagnostic', label: t('upload_diagnostic') },
     { key: 'nationality', label: t('upload_nationality') },
+    { key: 'formative', label: lang === 'ar' ? 'التقويم التكويني' : 'Formative' },
+    { key: 'exam', label: lang === 'ar' ? 'درجات الاختبار' : 'Exam Scores' },
+    { key: 'term', label: lang === 'ar' ? 'درجات الفصل' : 'Term Scores' },
   ]
 
   return (
@@ -144,16 +198,32 @@ export default function Upload({ lang }: UploadProps) {
       </div>
 
       {/* Year input */}
-      {mode !== 'nationality' && (
-        <div>
-          <label className="label">{t('upload_year_label')}</label>
-          <input
-            type="text"
-            className="input max-w-xs"
-            placeholder={t('upload_year_placeholder')}
-            value={yearId}
-            onChange={e => setYearId(e.target.value)}
-          />
+      {mode !== 'nationality' && (  /* nationality applies to all years */
+        <div className="flex gap-4 flex-wrap">
+          <div>
+            <label className="label">{t('upload_year_label')}</label>
+            <input
+              type="text"
+              className="input max-w-xs"
+              placeholder={t('upload_year_placeholder')}
+              value={yearId}
+              onChange={e => setYearId(e.target.value)}
+            />
+          </div>
+          {mode === 'term' && (
+            <div>
+              <label className="label">{lang === 'ar' ? 'الفصل الدراسي' : 'Semester'}</label>
+              <select
+                className="input"
+                value={termSemester}
+                onChange={e => setTermSemester(Number(e.target.value) as 1 | 2 | 3)}
+              >
+                <option value={1}>{lang === 'ar' ? 'الفصل الأول' : 'Term 1'}</option>
+                <option value={2}>{lang === 'ar' ? 'الفصل الثاني' : 'Term 2'}</option>
+                <option value={3}>{lang === 'ar' ? 'الفصل الثالث' : 'Term 3'}</option>
+              </select>
+            </div>
+          )}
         </div>
       )}
 
@@ -171,6 +241,9 @@ export default function Upload({ lang }: UploadProps) {
           onClick={() => {
             if (mode === 'annual') downloadAnnualTemplate()
             else if (mode === 'diagnostic') downloadDiagnosticTemplate()
+            else if (mode === 'formative') downloadFormativeTemplate()
+            else if (mode === 'exam') downloadExamTemplate()
+            else if (mode === 'term') downloadTermTemplate(termSemester)
             else downloadNationalityTemplate()
           }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors"

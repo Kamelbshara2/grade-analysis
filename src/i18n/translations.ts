@@ -219,6 +219,7 @@ const translations = {
     // Student Tracker
     nav_student: 'تتبع الطالب',
     nav_methodology: 'المنهجية',
+    nav_print_report: 'التقرير المطبوع',
     student_title: 'تتبع الطالب الفردي',
     student_search: 'ابحث برقم الهوية أو الاسم',
     student_not_found: 'لم يتم العثور على الطالب',
@@ -464,6 +465,7 @@ const translations = {
     // Student Tracker
     nav_student: 'Student Tracker',
     nav_methodology: 'Methodology',
+    nav_print_report: 'Print Report',
     student_title: 'Individual Student Tracker',
     student_search: 'Search by ID or name',
     student_not_found: 'Student not found',

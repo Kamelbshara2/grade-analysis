@@ -129,6 +129,137 @@ export function downloadDiagnosticTemplate() {
   XLSX.writeFile(wb, 'نموذج_درجات_التشخيصي.xlsx')
 }
 
+// ── Formative / Continuous Assessment Template ───────────────────────────────
+// Columns: رقم الطالب | الصف | الفصل | per subject: (ف1 - تكويني) | (ف3 - تكويني)
+export function downloadFormativeTemplate() {
+  const wb = XLSX.utils.book_new()
+
+  const allSubjects = [
+    'اللغة العربية', 'اللغة الإنجليزية', 'الرياضيات',
+    'التربية الإسلامية', 'الدراسات الاجتماعية', 'العلوم',
+    'الفيزياء', 'الكيمياء', 'الأحياء',
+  ]
+
+  // Row 0: title
+  const titleRow = ['نموذج رفع درجات التقويم التكويني / المستمر (الفصل الأول والثالث)', ...Array(2 + allSubjects.length * 2 - 1).fill(null)]
+  // Row 1: subject spans
+  const subjectRow: (string | null)[] = [null, null, null]
+  for (const s of allSubjects) subjectRow.push(s, null)
+  // Row 2: semester labels
+  const semRow: (string | null)[] = [null, null, null]
+  for (const _s of allSubjects) { semRow.push('ف1 - تكويني', 'ف3 - تكويني') }
+  // Row 3: column headers
+  const headerRow = ['رقم الطالب', 'الصف', 'الفصل (القسم)', ...allSubjects.flatMap(s => [`${s} ف1`, `${s} ف3`])]
+  // Row 4: example
+  const exRow = ['123456', 7, '1', 78, 82, 70, 75, 80, 85, 72, 74, '', '', '', '', '', '', '', '', '']
+
+  const data = [titleRow, subjectRow, semRow, headerRow, exRow]
+  const ws = XLSX.utils.aoa_to_sheet(data)
+  ws['!cols'] = [{ wch: 14 }, { wch: 7 }, { wch: 12 }, ...Array(allSubjects.length * 2).fill({ wch: 10 })]
+  XLSX.utils.book_append_sheet(wb, ws, 'التقويم التكويني')
+
+  // Instruction sheet
+  const instrData = [
+    ['تعليمات ملء النموذج'],
+    [''],
+    ['1. أدخل رقم الطالب في العمود الأول (يجب أن يطابق رقم الطالب في ملف الدرجات السنوية).'],
+    ['2. أدخل رقم الصف الدراسي (5-12).'],
+    ['3. أدخل رقم القسم/الفصل.'],
+    ['4. لكل مادة: أدخل درجة التقويم التكويني للفصل الأول (ف1) والثالث (ف3).'],
+    ['5. اترك الخانة فارغة إذا لم تُدرَّس المادة للطالب.'],
+    ['6. النطاق المقبول: 0 - 100.'],
+    [''],
+    ['* يستخدم هذا النموذج لتقرير معيار 1.3 - تحليل الفجوات بين التكويني والختامي.'],
+  ]
+  const instrWs = XLSX.utils.aoa_to_sheet(instrData)
+  instrWs['!cols'] = [{ wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, instrWs, 'تعليمات')
+
+  XLSX.writeFile(wb, 'نموذج_التقويم_التكويني.xlsx')
+}
+
+// ── Exam Scores Template ──────────────────────────────────────────────────────
+// Columns: رقم الطالب | الصف | الفصل | per subject: (ف1 - اختبار) | (ف3 - اختبار)
+export function downloadExamTemplate() {
+  const wb = XLSX.utils.book_new()
+
+  const allSubjects = [
+    'اللغة العربية', 'اللغة الإنجليزية', 'الرياضيات',
+    'التربية الإسلامية', 'الدراسات الاجتماعية', 'العلوم',
+    'الفيزياء', 'الكيمياء', 'الأحياء',
+  ]
+
+  const titleRow = ['نموذج رفع درجات اختبار نهاية الفصل (الفصل الأول والثالث)', ...Array(2 + allSubjects.length * 2 - 1).fill(null)]
+  const subjectRow: (string | null)[] = [null, null, null]
+  for (const s of allSubjects) subjectRow.push(s, null)
+  const semRow: (string | null)[] = [null, null, null]
+  for (const _s of allSubjects) { semRow.push('ف1 - اختبار', 'ف3 - اختبار') }
+  const headerRow = ['رقم الطالب', 'الصف', 'الفصل (القسم)', ...allSubjects.flatMap(s => [`${s} ف1`, `${s} ف3`])]
+  const exRow = ['123456', 7, '1', 72, 78, 65, 70, 74, 80, 68, 72, '', '', '', '', '', '', '', '', '']
+
+  const data = [titleRow, subjectRow, semRow, headerRow, exRow]
+  const ws = XLSX.utils.aoa_to_sheet(data)
+  ws['!cols'] = [{ wch: 14 }, { wch: 7 }, { wch: 12 }, ...Array(allSubjects.length * 2).fill({ wch: 10 })]
+  XLSX.utils.book_append_sheet(wb, ws, 'درجات الاختبار')
+
+  const instrData = [
+    ['تعليمات ملء النموذج'],
+    [''],
+    ['1. أدخل رقم الطالب (يطابق ملف الدرجات السنوية).'],
+    ['2. أدخل رقم الصف الدراسي (5-12).'],
+    ['3. أدخل رقم القسم/الفصل.'],
+    ['4. لكل مادة: أدخل درجة اختبار نهاية الفصل الأول (ف1) والثالث (ف3).'],
+    ['5. اترك الخانة فارغة إذا لم تُدرَّس المادة.'],
+    ['6. النطاق المقبول: 0 - 100.'],
+    [''],
+    ['* يستخدم هذا النموذج للمقارنة مع درجات التقويم التكويني في تقرير معيار 1.3.'],
+  ]
+  const instrWs = XLSX.utils.aoa_to_sheet(instrData)
+  instrWs['!cols'] = [{ wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, instrWs, 'تعليمات')
+
+  XLSX.writeFile(wb, 'نموذج_درجات_الاختبار.xlsx')
+}
+
+// ── Term Scores Template ──────────────────────────────────────────────────────
+// Simple format: رقم الطالب | الصف | الفصل | subject1 | subject2 | ...
+export function downloadTermTemplate(semester: 1 | 2 | 3) {
+  const wb = XLSX.utils.book_new()
+  const semLabel = semester === 1 ? 'الأول' : semester === 2 ? 'الثاني' : 'الثالث'
+
+  const allSubjects = [
+    'اللغة العربية', 'اللغة الإنجليزية', 'الرياضيات',
+    'التربية الإسلامية', 'الدراسات الاجتماعية', 'العلوم',
+    'الفيزياء', 'الكيمياء', 'الأحياء',
+  ]
+
+  const titleRow = [`نموذج رفع درجات الفصل ${semLabel}`, ...Array(2 + allSubjects.length - 1).fill(null)]
+  const headerRow = ['رقم الطالب', 'الصف', 'الفصل (القسم)', ...allSubjects]
+  const exRow = ['123456', 7, '1', 78, 72, 80, 75, 70, 82, '', '', '']
+
+  const ws = XLSX.utils.aoa_to_sheet([titleRow, headerRow, exRow])
+  ws['!cols'] = [{ wch: 14 }, { wch: 7 }, { wch: 12 }, ...Array(allSubjects.length).fill({ wch: 12 })]
+  XLSX.utils.book_append_sheet(wb, ws, `درجات الفصل ${semLabel}`)
+
+  const instrData = [
+    [`تعليمات ملء نموذج درجات الفصل ${semLabel}`],
+    [''],
+    ['1. أدخل رقم الطالب (يجب أن يطابق رقم الطالب في ملف الدرجات السنوية).'],
+    ['2. أدخل رقم الصف الدراسي (5-12).'],
+    ['3. أدخل رقم القسم/الفصل.'],
+    ['4. أدخل درجة كل مادة من 100.'],
+    ['5. اترك الخانة فارغة إذا لم تُدرَّس المادة للطالب.'],
+    ['6. النطاق المقبول: 0 - 100.'],
+    [''],
+    ['* تُستخدم هذه الدرجات لمتابعة تطور أداء الطلاب من فصل لآخر ومقارنتهم بدرجات التشخيصي.'],
+  ]
+  const instrWs = XLSX.utils.aoa_to_sheet(instrData)
+  instrWs['!cols'] = [{ wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, instrWs, 'تعليمات')
+
+  XLSX.writeFile(wb, `نموذج_درجات_الفصل_${semLabel}.xlsx`)
+}
+
 // ── Nationality Template ─────────────────────────────────────────────────────
 // Columns: رقم الطالب | الجنسية (مواطن / وافد)
 export function downloadNationalityTemplate() {

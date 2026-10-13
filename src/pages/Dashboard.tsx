@@ -111,17 +111,25 @@ export default function Dashboard({ lang }: DashboardProps) {
     }
     return [...map.entries()]
       .map(([subject, { scores, passMark }]) => {
-        const passCount = scores.filter(v => v >= passMark).length
+        const total = scores.length
+        const failCount = scores.filter(v => v < passMark).length
+        const passCount = scores.filter(v => v >= passMark && v < 75).length
+        const above75Count = scores.filter(v => v >= 75).length
         return {
           subject,
           label: (ar ? SUBJECT_LABELS[subject]?.ar : SUBJECT_LABELS[subject]?.en) ?? subject,
-          count: scores.length,
-          passRate: (passCount / scores.length) * 100,
-          mean: scores.reduce((a, b) => a + b, 0) / scores.length,
+          count: total,
+          passRate: ((total - failCount) / total) * 100,
+          failRate: (failCount / total) * 100,
+          above75Rate: (above75Count / total) * 100,
+          mean: scores.reduce((a, b) => a + b, 0) / total,
+          failCount,
+          passCount,
+          above75Count,
         }
       })
       .filter(s => s.count >= 3)
-      .sort((a, b) => b.passRate - a.passRate)
+      .sort((a, b) => b.above75Rate - a.above75Rate)
   }, [yearRecords, ar])
 
   // ── Per-grade stats ───────────────────────────────────
@@ -403,6 +411,82 @@ export default function Dashboard({ lang }: DashboardProps) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Per-subject achievement bands ── */}
+      {subjectStats.length > 0 && (
+        <div className="card overflow-x-auto">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="font-semibold text-gray-700 dark:text-gray-300">
+                {ar ? 'توزيع الطلاب حسب الإنجاز — بالمادة' : 'Student Achievement Distribution by Subject'}
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {ar ? 'نسبة النجاح · نسبة الرسوب · نسبة الطلاب أعلى من 75%' : 'Pass rate · Fail rate · Students above 75%'}
+              </p>
+            </div>
+          </div>
+          <table className="table-base">
+            <thead>
+              <tr>
+                <th>{ar ? 'المادة' : 'Subject'}</th>
+                <th>{ar ? 'طلاب' : 'Students'}</th>
+                <th>{ar ? 'نسبة النجاح' : 'Pass Rate'}</th>
+                <th>{ar ? 'نسبة الرسوب' : 'Fail Rate'}</th>
+                <th>{ar ? 'أعلى من 75%' : 'Above 75%'}</th>
+                <th>{ar ? 'المتوسط' : 'Mean'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {subjectStats.map(s => (
+                <tr key={s.subject}>
+                  <td className="font-medium">{s.label}</td>
+                  <td className="text-gray-500">{s.count}</td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                        <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${s.passRate}%` }} />
+                      </div>
+                      <span className={clsx('text-xs font-semibold', s.passRate >= 90 ? 'text-green-600' : s.passRate >= 70 ? 'text-amber-600' : 'text-red-600')}>
+                        {round2(s.passRate)}%
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                        <div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${s.failRate}%` }} />
+                      </div>
+                      <span className={clsx('text-xs font-semibold', s.failRate <= 10 ? 'text-green-600' : s.failRate <= 30 ? 'text-amber-600' : 'text-red-600')}>
+                        {round2(s.failRate)}%
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                        <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${s.above75Rate}%` }} />
+                      </div>
+                      <span className={clsx('text-xs font-semibold', s.above75Rate >= 70 ? 'text-green-600' : s.above75Rate >= 50 ? 'text-amber-600' : 'text-red-600')}>
+                        {round2(s.above75Rate)}%
+                      </span>
+                    </div>
+                  </td>
+                  <td className={clsx('font-mono text-sm', s.mean >= 75 ? 'text-green-600' : s.mean >= 60 ? 'text-amber-600' : 'text-red-600')}>
+                    {round2(s.mean)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Legend */}
+          <div className="mt-3 pt-3 border-t flex flex-wrap gap-4 text-xs text-gray-500">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />{ar ? 'نجاح (≥ معيار النجاح)' : 'Pass (≥ pass mark)'}</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />{ar ? 'رسوب (< معيار النجاح)' : 'Fail (< pass mark)'}</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />{ar ? 'أعلى من 75% (المعيار الوزاري)' : 'Above 75% (MOE Standard)'}</span>
+          </div>
         </div>
       )}
 

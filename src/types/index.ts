@@ -133,11 +133,46 @@ export interface UploadResult {
   sections: string[];
 }
 
+// ===== TERM SCORES (simple per-term upload) =====
+export interface TermScore {
+  studentId: string;
+  yearId: string;
+  semester: 1 | 2 | 3;
+  subjectCode: SubjectCode;
+  grade: number;
+  section: string;
+  score: number | null;
+}
+
+// ===== FORMATIVE / EXAM COMPONENT SCORES =====
+export interface FormativeScore {
+  studentId: string;
+  yearId: string;
+  subjectCode: SubjectCode;
+  grade: number;
+  section: string;
+  s1: number | null;   // التقويم التكويني/المستمر للفصل الأول
+  s3: number | null;   // التقويم التكويني/المستمر للفصل الثالث
+}
+
+export interface ExamScore {
+  studentId: string;
+  yearId: string;
+  subjectCode: SubjectCode;
+  grade: number;
+  section: string;
+  s1: number | null;   // درجة اختبار الفصل الأول
+  s3: number | null;   // درجة اختبار الفصل الثالث
+}
+
 // ===== STORED DATA (in localStorage / D1) =====
 export interface YearData {
   yearId: string;
   records: StudentRecord[];
   diagnosticScores: DiagnosticScore[];
+  formativeScores: FormativeScore[];
+  examScores: ExamScore[];
+  termScores: TermScore[];
   uploadedAt: string;
 }
 

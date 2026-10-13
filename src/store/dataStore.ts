@@ -1,4 +1,4 @@
-import type { AppData, YearData, StudentRecord, DiagnosticScore, LearningOutcome, OutcomeScore } from '@/types'
+import type { AppData, YearData, StudentRecord, DiagnosticScore, LearningOutcome, OutcomeScore, FormativeScore, ExamScore, TermScore } from '@/types'
 
 const STORAGE_KEY = 'grade_analysis_v1'
 const API_LOADED_KEY = 'grade_analysis_api_loaded'
@@ -6,7 +6,16 @@ const API_LOADED_KEY = 'grade_analysis_api_loaded'
 function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as AppData
+    if (raw) {
+      const parsed = JSON.parse(raw) as AppData
+      // Backfill missing arrays from older stored data
+      for (const yd of Object.values(parsed.years)) {
+        if (!yd.formativeScores) yd.formativeScores = []
+        if (!yd.examScores) yd.examScores = []
+        if (!yd.termScores) yd.termScores = []
+      }
+      return parsed
+    }
   } catch {
     // ignore
   }
@@ -88,6 +97,9 @@ export const dataStore = {
       yearId,
       records,
       diagnosticScores: existing?.diagnosticScores || [],
+      formativeScores: existing?.formativeScores || [],
+      examScores: existing?.examScores || [],
+      termScores: existing?.termScores || [],
       uploadedAt: new Date().toISOString(),
     }
     saveData(_data)
@@ -95,9 +107,51 @@ export const dataStore = {
 
   importDiagnosticScores(yearId: string, scores: DiagnosticScore[]): void {
     if (!_data.years[yearId]) {
-      _data.years[yearId] = { yearId, records: [], diagnosticScores: scores, uploadedAt: new Date().toISOString() }
+      _data.years[yearId] = { yearId, records: [], diagnosticScores: scores, formativeScores: [], examScores: [], termScores: [], uploadedAt: new Date().toISOString() }
     } else {
       _data.years[yearId].diagnosticScores = scores
+    }
+    saveData(_data)
+  },
+
+  getFormativeScores(yearId: string): FormativeScore[] {
+    return _data.years[yearId]?.formativeScores || []
+  },
+
+  importFormativeScores(yearId: string, scores: FormativeScore[]): void {
+    if (!_data.years[yearId]) {
+      _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: scores, examScores: [], termScores: [], uploadedAt: new Date().toISOString() }
+    } else {
+      _data.years[yearId].formativeScores = scores
+    }
+    saveData(_data)
+  },
+
+  getExamScores(yearId: string): ExamScore[] {
+    return _data.years[yearId]?.examScores || []
+  },
+
+  importExamScores(yearId: string, scores: ExamScore[]): void {
+    if (!_data.years[yearId]) {
+      _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: scores, termScores: [], uploadedAt: new Date().toISOString() }
+    } else {
+      _data.years[yearId].examScores = scores
+    }
+    saveData(_data)
+  },
+
+  getTermScores(yearId: string, semester?: 1 | 2 | 3): TermScore[] {
+    const all = _data.years[yearId]?.termScores || []
+    return semester ? all.filter(s => s.semester === semester) : all
+  },
+
+  importTermScores(yearId: string, semester: 1 | 2 | 3, scores: TermScore[]): void {
+    if (!_data.years[yearId]) {
+      _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: [], termScores: scores, uploadedAt: new Date().toISOString() }
+    } else {
+      // Replace scores for this semester, keep others
+      const existing = (_data.years[yearId].termScores || []).filter(s => s.semester !== semester)
+      _data.years[yearId].termScores = [...existing, ...scores]
     }
     saveData(_data)
   },
