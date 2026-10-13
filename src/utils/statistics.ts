@@ -524,17 +524,23 @@ export function getProportionLabel(pct: number, lang: 'ar' | 'en'): string {
 export interface AchievementIndicator {
   subjectCode: SubjectCode
   totalStudents: number
-  above75Count: number
-  above75Rate: number  // 0-100
+  cycle: Cycle
+  mean: number
+  letterGrade: string
+  // Band counts & rates (0-100)
+  above50Count: number; above50Rate: number
+  above60Count: number; above60Rate: number
+  above70Count: number; above70Rate: number
+  above75Count: number; above75Rate: number
+  // المؤشر 1.1 — based on above75Rate
   level: 'excellent' | 'very_good' | 'good' | 'below'
   levelAr: string
   levelEn: string
-  mean: number
-  letterGrade: string
-  passCount: number
-  passRate: number
   proportionAr: string
   proportionEn: string
+  // legacy alias kept for Reports.tsx
+  passCount: number
+  passRate: number
 }
 
 export function computeAchievementIndicators(
@@ -552,7 +558,13 @@ export function computeAchievementIndicators(
     if (totalStudents === 0) return null
 
     const passMark = getPassMark(cycle)
+    const above50Count = scores.filter(s => s >= 50).length
+    const above60Count = scores.filter(s => s >= 60).length
+    const above70Count = scores.filter(s => s >= 70).length
     const above75Count = scores.filter(s => s >= 75).length
+    const above50Rate = round2((above50Count / totalStudents) * 100)
+    const above60Rate = round2((above60Count / totalStudents) * 100)
+    const above70Rate = round2((above70Count / totalStudents) * 100)
     const above75Rate = round2((above75Count / totalStudents) * 100)
     const passCount = scores.filter(s => s >= passMark).length
     const passRate = round2((passCount / totalStudents) * 100)
@@ -569,17 +581,20 @@ export function computeAchievementIndicators(
     return {
       subjectCode,
       totalStudents,
-      above75Count,
-      above75Rate,
+      cycle,
+      mean,
+      letterGrade: getLetterGrade(mean, cycle),
+      above50Count, above50Rate,
+      above60Count, above60Rate,
+      above70Count, above70Rate,
+      above75Count, above75Rate,
       level,
       levelAr,
       levelEn,
-      mean,
-      letterGrade: getLetterGrade(mean, cycle),
-      passCount,
-      passRate,
       proportionAr: getProportionLabel(above75Rate, 'ar'),
       proportionEn: getProportionLabel(above75Rate, 'en'),
+      passCount,
+      passRate,
     } as AchievementIndicator
   }).filter(Boolean) as AchievementIndicator[]
 }
