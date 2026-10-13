@@ -135,10 +135,11 @@ export const dataStore = {
     return [...new Set(records.map(r => r.grade))].sort((a, b) => a - b)
   },
 
-  getUniqueSections(yearId?: string, grade?: number): string[] {
+  getUniqueSections(yearId?: string, grade?: number, track?: string): string[] {
     let records = yearId ? this.getRecordsByYear(yearId) : this.getAllRecords()
     if (grade) records = records.filter(r => r.grade === grade)
-    return [...new Set(records.map(r => r.section))].sort()
+    if (track) records = records.filter(r => r.track === track)
+    return [...new Set(records.map(r => r.section))].sort((a, b) => +a - +b)
   },
 
   clearAll(): void {
