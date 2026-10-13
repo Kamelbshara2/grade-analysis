@@ -295,28 +295,40 @@ export function computeSemesterProgress(
 export interface MultiYearRow {
   studentId: string
   studentName: string
-  scores: (number | null)[]   // one entry per year, in year order
-  diffs: (number | null)[]    // diff[i] = scores[i+1] - scores[i]
+  currentGrade: number | null   // grade in the latest year
+  currentSection: string | null // section in the latest year
+  scores: (number | null)[]     // one entry per year, in year order
+  diffs: (number | null)[]      // diff[i] = scores[i+1] - scores[i]
   categories: (ProgressResult['category'] | null)[]
-  overallDiff: number | null  // last year - first year with data
+  overallDiff: number | null    // last year - first year with data
   overallCategory: ProgressResult['category'] | null
 }
 
 export function computeMultiYearProgress(
   allYearRecords: { yearId: string; records: StudentRecord[] }[],
   subject: SubjectCode,
-  semester: Semester | 'annual'
+  semester: Semester | 'annual',
+  // When provided, only track students present in this set (filtered by current-year grade)
+  anchorStudentIds?: Set<string>
 ): MultiYearRow[] {
-  // Build map: studentId -> { name, scores by year index }
-  const studentMap = new Map<string, { name: string; scores: (number | null)[] }>()
+  // Build map: studentId -> { name, grade/section from latest year, scores by year index }
+  const studentMap = new Map<string, { name: string; currentGrade: number | null; currentSection: string | null; scores: (number | null)[] }>()
 
   for (let yi = 0; yi < allYearRecords.length; yi++) {
     for (const r of allYearRecords[yi].records) {
+      if (anchorStudentIds && !anchorStudentIds.has(r.student.id)) continue
+      const isLatestYear = yi === allYearRecords.length - 1
       if (!studentMap.has(r.student.id)) {
         studentMap.set(r.student.id, {
           name: r.student.name,
+          currentGrade: isLatestYear ? r.grade : null,
+          currentSection: isLatestYear ? r.section : null,
           scores: new Array(allYearRecords.length).fill(null),
         })
+      } else if (isLatestYear) {
+        const entry = studentMap.get(r.student.id)!
+        entry.currentGrade = r.grade
+        entry.currentSection = r.section
       }
       const entry = studentMap.get(r.student.id)!
       const g = r.grades[subject]
@@ -331,7 +343,7 @@ export function computeMultiYearProgress(
   }
 
   const rows: MultiYearRow[] = []
-  for (const [studentId, { name, scores }] of studentMap) {
+  for (const [studentId, { name, currentGrade, currentSection, scores }] of studentMap) {
     const diffs: (number | null)[] = []
     const categories: (ProgressResult['category'] | null)[] = []
 
@@ -360,7 +372,7 @@ export function computeMultiYearProgress(
       overallCategory = classifyProgress(scores[firstIdx]!, scores[lastIdx]!, overallDiff)
     }
 
-    rows.push({ studentId, studentName: name, scores, diffs, categories, overallDiff, overallCategory })
+    rows.push({ studentId, studentName: name, currentGrade, currentSection, scores, diffs, categories, overallDiff, overallCategory })
   }
 
   return rows.sort((a, b) => a.studentName.localeCompare(b.studentName))

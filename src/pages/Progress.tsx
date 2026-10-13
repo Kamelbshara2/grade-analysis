@@ -71,12 +71,24 @@ export default function Progress({ lang }: ProgressProps) {
 
   const multiYearRows = useMemo(() => {
     if (view !== 'multiyear') return []
+
+    // Anchor: students are identified by their grade in the LATEST (current) year.
+    // Past years are searched without grade filter — students move up a grade each year.
+    const latestYear = years[years.length - 1]
+    const latestFiltered = filterRecords(
+      dataStore.getRecordsByYear(latestYear ?? ''),
+      { grade: filter.grade, section: filter.section, track: filter.track, nationality: filter.nationality }
+    )
+    const anchorIds = (filter.grade || filter.section)
+      ? new Set(latestFiltered.map(r => r.student.id))
+      : undefined
+
     const allYearRecords = years.map(yId => ({
       yearId: yId,
-      records: filterRecords(dataStore.getRecordsByYear(yId), { grade: filter.grade, section: filter.section }),
+      records: dataStore.getRecordsByYear(yId), // unfiltered — anchor handles selection
     }))
-    return computeMultiYearProgress(allYearRecords, subject, semester)
-  }, [view, years, subject, semester, filter.grade, filter.section])
+    return computeMultiYearProgress(allYearRecords, subject, semester, anchorIds)
+  }, [view, years, subject, semester, filter.grade, filter.section, filter.track, filter.nationality])
 
   if (years.length === 0) {
     return <div className="card text-center py-12 text-gray-500">{t('no_data')}</div>
@@ -284,6 +296,7 @@ function MultiYearView({ rows, years, lang, subject }: {
             <thead>
               <tr>
                 <th className="text-start">{ar ? 'الطالب' : 'Student'}</th>
+                <th className="text-center text-xs">{ar ? 'الصف الحالي' : 'Current Grade'}</th>
                 {years.map(y => (
                   <th key={y} className="text-center">{y}</th>
                 ))}
@@ -299,6 +312,10 @@ function MultiYearView({ rows, years, lang, subject }: {
               {rows.map(r => (
                 <tr key={r.studentId}>
                   <td className="whitespace-nowrap">{r.studentName}</td>
+                  <td className="text-center text-xs text-gray-500 whitespace-nowrap">
+                    {r.currentGrade ? `${ar ? 'الصف' : 'G'} ${r.currentGrade}` : '—'}
+                    {r.currentSection ? ` / ${r.currentSection}` : ''}
+                  </td>
                   {r.scores.map((s, i) => (
                     <td key={i} className="font-mono text-center text-sm">
                       {s !== null ? s.toFixed(1) : <span className="text-gray-300">—</span>}
