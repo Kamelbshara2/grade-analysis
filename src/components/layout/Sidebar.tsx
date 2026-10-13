@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Upload, BarChart2, TrendingUp,
-  Target, GitCompare, FileText, BookOpen, Settings,
+  Target, GitCompare, FileText, Settings,
   User, BookMarked, GraduationCap,
 } from 'lucide-react'
 import { t } from '@/i18n/translations'
@@ -40,8 +40,7 @@ const NAV_GROUPS = [
     labelAr: 'ضمان الجودة',
     labelEn: 'Quality',
     items: [
-      { to: '/gap',      icon: Target,   key: 'nav_gap' as const },
-      { to: '/outcomes', icon: BookOpen, key: 'nav_outcomes' as const },
+      { to: '/gap', icon: Target, key: 'nav_gap' as const },
     ],
   },
   {
