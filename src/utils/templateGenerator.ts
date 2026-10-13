@@ -221,6 +221,45 @@ export function downloadExamTemplate() {
   XLSX.writeFile(wb, 'نموذج_درجات_الاختبار.xlsx')
 }
 
+// ── Term Scores Template ──────────────────────────────────────────────────────
+// Simple format: رقم الطالب | الصف | الفصل | subject1 | subject2 | ...
+export function downloadTermTemplate(semester: 1 | 2 | 3) {
+  const wb = XLSX.utils.book_new()
+  const semLabel = semester === 1 ? 'الأول' : semester === 2 ? 'الثاني' : 'الثالث'
+
+  const allSubjects = [
+    'اللغة العربية', 'اللغة الإنجليزية', 'الرياضيات',
+    'التربية الإسلامية', 'الدراسات الاجتماعية', 'العلوم',
+    'الفيزياء', 'الكيمياء', 'الأحياء',
+  ]
+
+  const titleRow = [`نموذج رفع درجات الفصل ${semLabel}`, ...Array(2 + allSubjects.length - 1).fill(null)]
+  const headerRow = ['رقم الطالب', 'الصف', 'الفصل (القسم)', ...allSubjects]
+  const exRow = ['123456', 7, '1', 78, 72, 80, 75, 70, 82, '', '', '']
+
+  const ws = XLSX.utils.aoa_to_sheet([titleRow, headerRow, exRow])
+  ws['!cols'] = [{ wch: 14 }, { wch: 7 }, { wch: 12 }, ...Array(allSubjects.length).fill({ wch: 12 })]
+  XLSX.utils.book_append_sheet(wb, ws, `درجات الفصل ${semLabel}`)
+
+  const instrData = [
+    [`تعليمات ملء نموذج درجات الفصل ${semLabel}`],
+    [''],
+    ['1. أدخل رقم الطالب (يجب أن يطابق رقم الطالب في ملف الدرجات السنوية).'],
+    ['2. أدخل رقم الصف الدراسي (5-12).'],
+    ['3. أدخل رقم القسم/الفصل.'],
+    ['4. أدخل درجة كل مادة من 100.'],
+    ['5. اترك الخانة فارغة إذا لم تُدرَّس المادة للطالب.'],
+    ['6. النطاق المقبول: 0 - 100.'],
+    [''],
+    ['* تُستخدم هذه الدرجات لمتابعة تطور أداء الطلاب من فصل لآخر ومقارنتهم بدرجات التشخيصي.'],
+  ]
+  const instrWs = XLSX.utils.aoa_to_sheet(instrData)
+  instrWs['!cols'] = [{ wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, instrWs, 'تعليمات')
+
+  XLSX.writeFile(wb, `نموذج_درجات_الفصل_${semLabel}.xlsx`)
+}
+
 // ── Nationality Template ─────────────────────────────────────────────────────
 // Columns: رقم الطالب | الجنسية (مواطن / وافد)
 export function downloadNationalityTemplate() {

@@ -133,6 +133,17 @@ export interface UploadResult {
   sections: string[];
 }
 
+// ===== TERM SCORES (simple per-term upload) =====
+export interface TermScore {
+  studentId: string;
+  yearId: string;
+  semester: 1 | 2 | 3;
+  subjectCode: SubjectCode;
+  grade: number;
+  section: string;
+  score: number | null;
+}
+
 // ===== FORMATIVE / EXAM COMPONENT SCORES =====
 export interface FormativeScore {
   studentId: string;
@@ -161,6 +172,7 @@ export interface YearData {
   diagnosticScores: DiagnosticScore[];
   formativeScores: FormativeScore[];
   examScores: ExamScore[];
+  termScores: TermScore[];
   uploadedAt: string;
 }
 

@@ -1170,11 +1170,164 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TERM PROGRESS REPORT (معيار — متابعة الفصول)
+// ══════════════════════════════════════════════════════════════════════════════
+function TermProgressReport({ lang, filter }: { lang: Language; filter: AnalysisFilter }) {
+  const ar = lang === 'ar'
+  const yearId = filter.yearId || dataStore.getYears().slice(-1)[0]
+
+  const { rows, subjects } = useMemo(() => {
+    const diag = dataStore.getDiagnosticScores(yearId)
+    const t1 = dataStore.getTermScores(yearId, 1)
+    const t2 = dataStore.getTermScores(yearId, 2)
+    const t3 = dataStore.getTermScores(yearId, 3)
+
+    const avg = (scores: { subjectCode: SubjectCode; score: number | null }[], code: SubjectCode) => {
+      const vals = scores.filter(s => s.subjectCode === code && s.score !== null).map(s => s.score as number)
+      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
+    }
+    const avgDiag = (code: SubjectCode) => {
+      const vals = diag.filter(s => s.subjectCode === code).map(s => s.score)
+      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
+    }
+
+    const allCodes = [...new Set([
+      ...diag.map(s => s.subjectCode),
+      ...t1.map(s => s.subjectCode),
+      ...t2.map(s => s.subjectCode),
+      ...t3.map(s => s.subjectCode),
+    ])] as SubjectCode[]
+
+    const rows = allCodes.map(code => {
+      const diagnostic = avgDiag(code)
+      const term1 = avg(t1, code)
+      const term2 = avg(t2, code)
+      const term3 = avg(t3, code)
+      const baseline = diagnostic ?? term1
+      const latest = term3 ?? term2 ?? term1
+      const diff = baseline !== null && latest !== null ? latest - baseline : null
+      return { code, diagnostic, term1, term2, term3, diff }
+    }).sort((a, b) => (SUBJECT_LABELS[a.code]?.ar ?? '').localeCompare(SUBJECT_LABELS[b.code]?.ar ?? ''))
+
+    return { rows, subjects: allCodes }
+  }, [yearId])
+
+  const hasAnyData = rows.some(r => r.diagnostic !== null || r.term1 !== null)
+
+  if (!hasAnyData) {
+    return (
+      <div className="space-y-4">
+        <div className="card bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800 text-center py-8">
+          <p className="font-semibold text-blue-800 dark:text-blue-300 mb-2">
+            {ar ? 'لا توجد بيانات فصلية لهذا العام' : 'No term data for this year'}
+          </p>
+          <p className="text-sm text-blue-600 dark:text-blue-400">
+            {ar
+              ? 'ارفع درجات التشخيصي كخط أساس ثم ارفع درجات كل فصل عبر تبويب "درجات الفصل" في صفحة الرفع.'
+              : 'Upload diagnostic scores as a baseline, then upload each term\'s scores via the "Term Scores" tab in the Upload page.'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Chart data: one bar group per subject
+  const chartData = rows.map(r => ({
+    name: SUBJECT_LABELS[r.code]?.[ar ? 'ar' : 'en'] ?? r.code,
+    ...(r.diagnostic !== null ? { [ar ? 'التشخيصي' : 'Diagnostic']: r.diagnostic } : {}),
+    ...(r.term1 !== null ? { [ar ? 'ف1' : 'Term 1']: r.term1 } : {}),
+    ...(r.term2 !== null ? { [ar ? 'ف2' : 'Term 2']: r.term2 } : {}),
+    ...(r.term3 !== null ? { [ar ? 'ف3' : 'Term 3']: r.term3 } : {}),
+  }))
+
+  const seriesKeys = [
+    rows.some(r => r.diagnostic !== null) ? (ar ? 'التشخيصي' : 'Diagnostic') : null,
+    rows.some(r => r.term1 !== null) ? (ar ? 'ف1' : 'Term 1') : null,
+    rows.some(r => r.term2 !== null) ? (ar ? 'ف2' : 'Term 2') : null,
+    rows.some(r => r.term3 !== null) ? (ar ? 'ف3' : 'Term 3') : null,
+  ].filter(Boolean) as string[]
+
+  const SERIES_COLORS = ['#6b7280', '#2563eb', '#d97706', '#16a34a']
+
+  return (
+    <div className="space-y-6">
+      <div className="card">
+        <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-4">
+          {ar ? 'متوسط الدرجات — التشخيصي والفصول' : 'Average Scores — Diagnostic & Terms'}
+        </h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" angle={-35} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
+            <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+            <Tooltip />
+            <Legend />
+            {seriesKeys.map((key, i) => (
+              <Bar key={key} dataKey={key} fill={SERIES_COLORS[i]} radius={[3, 3, 0, 0]} />
+            ))}
+            <ReferenceLine y={75} stroke="#dc2626" strokeDasharray="4 2" label={{ value: '75%', position: 'right', fontSize: 10 }} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Detail table */}
+      <div className="card overflow-x-auto">
+        <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-3">
+          {ar ? 'جدول المتابعة التفصيلي' : 'Detailed Tracking Table'}
+        </h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="text-start py-2 px-3 text-xs text-gray-500">{ar ? 'المادة' : 'Subject'}</th>
+              <th className="text-center py-2 px-3 text-xs text-gray-500">{ar ? 'التشخيصي' : 'Diag.'}</th>
+              <th className="text-center py-2 px-3 text-xs text-gray-500">{ar ? 'ف1' : 'T1'}</th>
+              <th className="text-center py-2 px-3 text-xs text-gray-500">{ar ? 'ف2' : 'T2'}</th>
+              <th className="text-center py-2 px-3 text-xs text-gray-500">{ar ? 'ف3' : 'T3'}</th>
+              <th className="text-center py-2 px-3 text-xs text-gray-500">{ar ? 'التغيير' : 'Change'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.code} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                <td className="py-2 px-3 font-medium text-gray-800 dark:text-gray-200">
+                  {SUBJECT_LABELS[r.code]?.[ar ? 'ar' : 'en'] ?? r.code}
+                </td>
+                {[r.diagnostic, r.term1, r.term2, r.term3].map((val, i) => (
+                  <td key={i} className="text-center py-2 px-3 text-gray-600 dark:text-gray-400">
+                    {val !== null ? (
+                      <span className={clsx('inline-block px-2 py-0.5 rounded text-xs font-semibold', val >= 75 ? 'bg-green-100 text-green-800' : val >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800')}>
+                        {val}
+                      </span>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                ))}
+                <td className="text-center py-2 px-3">
+                  {r.diff !== null ? (
+                    <span className={clsx('text-xs font-bold', r.diff > 0 ? 'text-green-600' : r.diff < 0 ? 'text-red-600' : 'text-gray-400')}>
+                      {r.diff > 0 ? `▲ +${r.diff}` : r.diff < 0 ? `▼ ${r.diff}` : '= 0'}
+                    </span>
+                  ) : <span className="text-gray-300 text-xs">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-xs text-gray-400 mt-3">
+          {ar
+            ? '* التغيير = آخر فصل متاح مقارنةً بالتشخيصي (أو الفصل الأول إن لم يكن هناك تشخيصي)'
+            : '* Change = latest available term vs. diagnostic (or Term 1 if no diagnostic)'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN REPORTS PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function Reports({ lang }: ReportsProps) {
   const ar = lang === 'ar'
-  const [tab, setTab] = useState<'achievement' | 'trends' | 'formative_gap'>('achievement')
+  const [tab, setTab] = useState<'achievement' | 'trends' | 'formative_gap' | 'term_progress'>('achievement')
   const [filter, setFilter] = useState<AnalysisFilter>({
     yearId: dataStore.getYears().slice(-1)[0],
     semester: 'annual',
@@ -1228,6 +1381,12 @@ export default function Reports({ lang }: ReportsProps) {
         >
           {ar ? '🔍 الفجوات التكويني/الختامي (معيار 1.3)' : '🔍 Formative/Exam Gaps (1.3)'}
         </button>
+        <button
+          className={clsx('px-4 py-2 text-sm font-medium border-b-2 transition-colors', tab === 'term_progress' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700')}
+          onClick={() => setTab('term_progress')}
+        >
+          {ar ? '📅 متابعة الفصول' : '📅 Term Tracking'}
+        </button>
       </div>
 
       {/* Filters */}
@@ -1246,6 +1405,7 @@ export default function Reports({ lang }: ReportsProps) {
       {tab === 'achievement' && <AchievementReport lang={lang} filter={filter} />}
       {tab === 'trends' && <ProgressTrendsReport lang={lang} filter={filter} />}
       {tab === 'formative_gap' && <FormativeGapReport lang={lang} filter={filter} />}
+      {tab === 'term_progress' && <TermProgressReport lang={lang} filter={filter} />}
     </div>
   )
 }
