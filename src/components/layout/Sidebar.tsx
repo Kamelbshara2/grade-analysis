@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Upload, BarChart2, TrendingUp,
   Target, GitCompare, FileText, Settings,
-  User, BookMarked, GraduationCap,
+  User, BookMarked, GraduationCap, Award,
 } from 'lucide-react'
 import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
@@ -40,7 +40,8 @@ const NAV_GROUPS = [
     labelAr: 'ضمان الجودة',
     labelEn: 'Quality',
     items: [
-      { to: '/gap', icon: Target, key: 'nav_gap' as const },
+      { to: '/achievement', icon: Award,  key: 'nav_achievement' as const },
+      { to: '/gap',         icon: Target, key: 'nav_gap' as const },
     ],
   },
   {

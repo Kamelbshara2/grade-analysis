@@ -6,6 +6,7 @@ import Upload from '@/pages/Upload'
 import Analysis from '@/pages/Analysis'
 import Progress from '@/pages/Progress'
 import GapAnalysis from '@/pages/GapAnalysis'
+import AchievementProfile from '@/pages/AchievementProfile'
 import Comparison from '@/pages/Comparison'
 import Reports from '@/pages/Reports'
 import Settings from '@/pages/Settings'
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="/analysis" element={<Analysis lang={lang} />} />
           <Route path="/progress" element={<Progress lang={lang} />} />
           <Route path="/gap" element={<GapAnalysis lang={lang} />} />
+          <Route path="/achievement" element={<AchievementProfile lang={lang} />} />
           <Route path="/comparison" element={<Comparison lang={lang} />} />
           <Route path="/reports" element={<Reports lang={lang} />} />
           <Route path="/student" element={<StudentProfile lang={lang} />} />
