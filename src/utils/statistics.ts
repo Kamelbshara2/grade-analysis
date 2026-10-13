@@ -1,8 +1,8 @@
 import type {
   StudentRecord, SubjectCode, SubjectStats, ProgressResult,
-  Cycle, Semester, AnalysisFilter, Nationality
+  Cycle, Semester, AnalysisFilter, Nationality, SubjectGrade
 } from '@/types'
-import { getPassMark, getCycle } from './subjectMapping'
+import { getPassMark, getCycle, SUBJECT_LABELS } from './subjectMapping'
 
 // ===== FILTER =====
 export function filterRecords(
@@ -486,4 +486,191 @@ function hashCode(s: string): number {
 // ===== ROUND =====
 export function round2(n: number): number {
   return Math.round(n * 100) / 100
+}
+
+// ===== LETTER GRADE =====
+export function getLetterGrade(score: number, cycle: Cycle): string {
+  if (score >= 90) return 'A'
+  if (score >= 80) return 'B'
+  if (score >= 70) return 'C'
+  if (score >= 60) return 'D'
+  if (cycle === 3) return score >= 50 ? 'E' : 'F'
+  return score >= 50 ? 'E' : 'F'
+}
+
+export function getGradeLabel(score: number, cycle: Cycle, lang: 'ar' | 'en'): string {
+  if (score >= 90) return lang === 'ar' ? 'متميز' : 'Outstanding'
+  if (score >= 80) return lang === 'ar' ? 'جيد جداً' : 'Very Good'
+  if (score >= 70) return lang === 'ar' ? 'جيد' : 'Good'
+  if (score >= 60) return lang === 'ar' ? 'مقبول' : 'Acceptable'
+  if (score >= 50) return lang === 'ar' ? (cycle === 3 ? 'راسب' : 'حد أدنى') : (cycle === 3 ? 'Fail' : 'Minimum')
+  return lang === 'ar' ? 'راسب' : 'Fail'
+}
+
+// ===== PROPORTION LABEL =====
+// Returns descriptive label for a percentage (e.g. 85 → 'معظم')
+export function getProportionLabel(pct: number, lang: 'ar' | 'en'): string {
+  if (pct >= 100) return lang === 'ar' ? 'جميعهم' : 'All'
+  if (pct >= 90) return lang === 'ar' ? 'الجميع تقريباً' : 'Almost all'
+  if (pct > 75) return lang === 'ar' ? 'معظم' : 'Most'
+  if (pct > 50) return lang === 'ar' ? 'الأغلبية' : 'Majority'
+  if (pct >= 15) return lang === 'ar' ? 'الأقلية' : 'Minority'
+  return lang === 'ar' ? 'قلة' : 'Few'
+}
+
+// ===== ACADEMIC ACHIEVEMENT INDICATOR (المؤشر 1.1) =====
+// Threshold: % of students scoring ≥75 determines achievement level
+// ≥70% → 'excellent', ≥60% → 'very_good', ≥50% → 'good', else → 'below'
+export interface AchievementIndicator {
+  subjectCode: SubjectCode
+  totalStudents: number
+  above75Count: number
+  above75Rate: number  // 0-100
+  level: 'excellent' | 'very_good' | 'good' | 'below'
+  levelAr: string
+  levelEn: string
+  mean: number
+  letterGrade: string
+  passCount: number
+  passRate: number
+  proportionAr: string
+  proportionEn: string
+}
+
+export function computeAchievementIndicators(
+  records: StudentRecord[],
+  semester: Semester | 'annual',
+): AchievementIndicator[] {
+  const subjectCodes = [...new Set(
+    records.flatMap(r => Object.keys(r.grades) as SubjectCode[])
+  )]
+
+  return subjectCodes.map(subjectCode => {
+    const cycle: Cycle = records.find(r => r.grades[subjectCode])?.cycle ?? 3
+    const scores = extractScores(records, subjectCode, semester)
+    const totalStudents = scores.length
+    if (totalStudents === 0) return null
+
+    const passMark = getPassMark(cycle)
+    const above75Count = scores.filter(s => s >= 75).length
+    const above75Rate = round2((above75Count / totalStudents) * 100)
+    const passCount = scores.filter(s => s >= passMark).length
+    const passRate = round2((passCount / totalStudents) * 100)
+    const mean = round2(scores.reduce((a, b) => a + b, 0) / totalStudents)
+
+    let level: AchievementIndicator['level']
+    let levelAr: string
+    let levelEn: string
+    if (above75Rate >= 70) { level = 'excellent'; levelAr = 'ممتاز'; levelEn = 'Excellent' }
+    else if (above75Rate >= 60) { level = 'very_good'; levelAr = 'جيد جداً'; levelEn = 'Very Good' }
+    else if (above75Rate >= 50) { level = 'good'; levelAr = 'جيد'; levelEn = 'Good' }
+    else { level = 'below'; levelAr = 'دون المقبول'; levelEn = 'Below Standard' }
+
+    return {
+      subjectCode,
+      totalStudents,
+      above75Count,
+      above75Rate,
+      level,
+      levelAr,
+      levelEn,
+      mean,
+      letterGrade: getLetterGrade(mean, cycle),
+      passCount,
+      passRate,
+      proportionAr: getProportionLabel(above75Rate, 'ar'),
+      proportionEn: getProportionLabel(above75Rate, 'en'),
+    } as AchievementIndicator
+  }).filter(Boolean) as AchievementIndicator[]
+}
+
+// ===== SEMESTER GAP ANALYSIS =====
+export interface SemesterGap {
+  subjectCode: SubjectCode
+  subjectNameAr: string
+  subjectNameEn: string
+  avgS1: number | null
+  avgS2: number | null
+  avgS3: number | null
+  avgAnnual: number | null
+  gapS1S3: number | null   // s3 - s1 (positive = improvement)
+  gapS1S2: number | null
+  gapS2S3: number | null
+  studentsWithDrop: number  // count of students where s3 < s1
+  studentsWithGain: number
+  totalStudents: number
+  priority: 'critical' | 'high' | 'medium' | 'low' | 'ok'
+}
+
+export function computeSemesterGaps(
+  records: StudentRecord[]
+): SemesterGap[] {
+  const subjectCodes = [...new Set(
+    records.flatMap(r => Object.keys(r.grades) as SubjectCode[])
+  )]
+
+  return subjectCodes.map(subjectCode => {
+    const subjectGrades = records
+      .map(r => r.grades[subjectCode])
+      .filter(Boolean) as SubjectGrade[]
+
+    const s1s = subjectGrades.map(g => g.s1).filter(v => v !== null) as number[]
+    const s2s = subjectGrades.map(g => g.s2).filter(v => v !== null) as number[]
+    const s3s = subjectGrades.map(g => g.s3).filter(v => v !== null) as number[]
+    const annuals = subjectGrades.map(g => g.annual).filter(v => v !== null) as number[]
+
+    const avg = (arr: number[]) => arr.length > 0 ? round2(arr.reduce((a, b) => a + b, 0) / arr.length) : null
+
+    const avgS1 = avg(s1s)
+    const avgS2 = avg(s2s)
+    const avgS3 = avg(s3s)
+    const avgAnnual = avg(annuals)
+
+    const gapS1S3 = (avgS1 !== null && avgS3 !== null) ? round2(avgS3 - avgS1) : null
+    const gapS1S2 = (avgS1 !== null && avgS2 !== null) ? round2(avgS2 - avgS1) : null
+    const gapS2S3 = (avgS2 !== null && avgS3 !== null) ? round2(avgS3 - avgS2) : null
+
+    // Per-student drop/gain analysis (s3 vs s1)
+    const pairedStudents = records.filter(r => {
+      const g = r.grades[subjectCode]
+      return g && g.s1 !== null && g.s3 !== null
+    })
+    const studentsWithDrop = pairedStudents.filter(r => {
+      const g = r.grades[subjectCode]!
+      return g.s3! < g.s1!
+    }).length
+    const studentsWithGain = pairedStudents.filter(r => {
+      const g = r.grades[subjectCode]!
+      return g.s3! > g.s1!
+    }).length
+
+    // Priority based on average gap (s1 to s3)
+    let priority: SemesterGap['priority'] = 'ok'
+    if (gapS1S3 !== null) {
+      if (gapS1S3 < -15) priority = 'critical'
+      else if (gapS1S3 < -8) priority = 'high'
+      else if (gapS1S3 < -3) priority = 'medium'
+      else if (gapS1S3 < 0) priority = 'low'
+      else priority = 'ok'
+    }
+
+    const labels = SUBJECT_LABELS[subjectCode] ?? { ar: subjectCode, en: subjectCode }
+
+    return {
+      subjectCode,
+      subjectNameAr: labels.ar,
+      subjectNameEn: labels.en,
+      avgS1,
+      avgS2,
+      avgS3,
+      avgAnnual,
+      gapS1S3,
+      gapS1S2,
+      gapS2S3,
+      studentsWithDrop,
+      studentsWithGain,
+      totalStudents: pairedStudents.length,
+      priority,
+    }
+  }).sort((a, b) => (a.gapS1S3 ?? 0) - (b.gapS1S3 ?? 0))
 }
