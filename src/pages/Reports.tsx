@@ -3,9 +3,9 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, Cell, ReferenceLine,
 } from 'recharts'
-import { Printer, ChevronDown, ChevronRight } from 'lucide-react'
+import { Printer, ChevronDown, ChevronRight, Download as DownloadIcon } from 'lucide-react'
 import { t } from '@/i18n/translations'
-import type { Language, AnalysisFilter, SubjectCode, Semester, Cycle } from '@/types'
+import type { Language, AnalysisFilter, SubjectCode, Semester, Cycle, FormativeScore, ExamScore } from '@/types'
 import { dataStore } from '@/store/dataStore'
 import {
   filterRecords, computeSubjectStats, extractScores, round2,
@@ -14,6 +14,7 @@ import {
   type AchievementIndicator, type SemesterGap,
 } from '@/utils/statistics'
 import { getCycle, SUBJECT_LABELS, getCycleSubjects, getPassMark } from '@/utils/subjectMapping'
+import { downloadFormativeTemplate, downloadExamTemplate } from '@/utils/templateGenerator'
 import FilterBar from '@/components/ui/FilterBar'
 import NormalDistributionChart from '@/components/charts/NormalDistributionChart'
 import clsx from 'clsx'
@@ -954,11 +955,226 @@ function ProgressTrendsReport({ lang, filter }: { lang: Language; filter: Analys
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// REPORT 3: FORMATIVE vs EXAM GAP (معيار 1.3)
+// ══════════════════════════════════════════════════════════════════════════════
+function FormativeGapReport({ lang, filter }: { lang: Language; filter: AnalysisFilter }) {
+  const ar = lang === 'ar'
+  const yearId = filter.yearId ?? ''
+
+  const formativeScores: FormativeScore[] = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
+  const examScores: ExamScore[] = useMemo(() => dataStore.getExamScores(yearId), [yearId])
+
+  const hasFormative = formativeScores.length > 0
+  const hasExam = examScores.length > 0
+
+  // Compute per-subject gap stats
+  const gapData = useMemo(() => {
+    if (!hasFormative && !hasExam) return []
+
+    const subjectSet = new Set([
+      ...formativeScores.map(s => s.subjectCode),
+      ...examScores.map(s => s.subjectCode),
+    ])
+
+    return [...subjectSet].map(sc => {
+      const fScores = formativeScores.filter(s => s.subjectCode === sc)
+      const eScores = examScores.filter(s => s.subjectCode === sc)
+
+      // S1
+      const fS1 = fScores.map(s => s.s1).filter((v): v is number => v !== null)
+      const eS1 = eScores.map(s => s.s1).filter((v): v is number => v !== null)
+      const avgFS1 = fS1.length ? round2(fS1.reduce((a, b) => a + b, 0) / fS1.length) : null
+      const avgES1 = eS1.length ? round2(eS1.reduce((a, b) => a + b, 0) / eS1.length) : null
+      const gapS1 = avgFS1 !== null && avgES1 !== null ? round2(avgES1 - avgFS1) : null
+
+      // S3
+      const fS3 = fScores.map(s => s.s3).filter((v): v is number => v !== null)
+      const eS3 = eScores.map(s => s.s3).filter((v): v is number => v !== null)
+      const avgFS3 = fS3.length ? round2(fS3.reduce((a, b) => a + b, 0) / fS3.length) : null
+      const avgES3 = eS3.length ? round2(eS3.reduce((a, b) => a + b, 0) / eS3.length) : null
+      const gapS3 = avgFS3 !== null && avgES3 !== null ? round2(avgES3 - avgFS3) : null
+
+      const label = ar ? SUBJECT_LABELS[sc]?.ar ?? sc : SUBJECT_LABELS[sc]?.en ?? sc
+
+      return { sc, label, avgFS1, avgES1, gapS1, avgFS3, avgES3, gapS3, fCount: fScores.length, eCount: eScores.length }
+    }).filter(d => d.fCount > 0 || d.eCount > 0)
+      .sort((a, b) => (Math.abs(a.gapS3 ?? 0) < Math.abs(b.gapS3 ?? 0) ? 1 : -1))
+  }, [formativeScores, examScores, ar])
+
+  // Chart data for S3 comparison
+  const s3ChartData = gapData
+    .filter(d => d.avgFS3 !== null || d.avgES3 !== null)
+    .map(d => ({ name: d.label, formative: d.avgFS3, exam: d.avgES3 }))
+
+  const GapBadge = ({ gap }: { gap: number | null }) => {
+    if (gap === null) return <span className="text-gray-400">—</span>
+    const cls = gap >= 0
+      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+    return <span className={clsx('text-xs px-2 py-0.5 rounded-full font-mono font-bold', cls)}>{gap > 0 ? `+${gap}` : gap}</span>
+  }
+
+  return (
+    <div className="space-y-8 print:space-y-6">
+      <CoverPage
+        lang={lang}
+        filter={filter}
+        reportTitle={ar ? 'تقرير تحليل الفجوات (معيار 1.3)' : 'Gap Analysis Report (1.3)'}
+        reportSubtitle={ar ? 'مقارنة التقويم التكويني / المستمر مع درجات الاختبار' : 'Continuous Assessment vs. Exam Score Comparison'}
+      />
+
+      {/* ── Upload prompts ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={clsx('card border-2', hasFormative ? 'border-green-300 bg-green-50 dark:bg-green-900/10' : 'border-dashed border-gray-300')}>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-semibold text-sm">{ar ? 'التقويم التكويني / المستمر' : 'Continuous Assessment'}</h3>
+              <p className="text-xs text-gray-500">{hasFormative ? `${formativeScores.length} ${ar ? 'سجل' : 'records'}` : (ar ? 'لم يُرفع بعد' : 'Not uploaded yet')}</p>
+            </div>
+            {hasFormative
+              ? <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">{ar ? 'تم الرفع ✓' : 'Uploaded ✓'}</span>
+              : <button onClick={downloadFormativeTemplate} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                  <DownloadIcon size={12} />{ar ? 'نموذج التكويني' : 'Download Template'}
+                </button>
+            }
+          </div>
+          {!hasFormative && (
+            <p className="text-xs text-gray-400">
+              {ar ? 'قم بتنزيل النموذج وتعبئته ثم رفعه من صفحة رفع البيانات (تبويب "التقويم التكويني")' : 'Download the template, fill it, then upload from the Upload page (Formative tab)'}
+            </p>
+          )}
+        </div>
+
+        <div className={clsx('card border-2', hasExam ? 'border-green-300 bg-green-50 dark:bg-green-900/10' : 'border-dashed border-gray-300')}>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-semibold text-sm">{ar ? 'درجات الاختبار (نهاية الفصل)' : 'Exam Scores (End of Semester)'}</h3>
+              <p className="text-xs text-gray-500">{hasExam ? `${examScores.length} ${ar ? 'سجل' : 'records'}` : (ar ? 'لم يُرفع بعد' : 'Not uploaded yet')}</p>
+            </div>
+            {hasExam
+              ? <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">{ar ? 'تم الرفع ✓' : 'Uploaded ✓'}</span>
+              : <button onClick={downloadExamTemplate} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                  <DownloadIcon size={12} />{ar ? 'نموذج الاختبار' : 'Download Template'}
+                </button>
+            }
+          </div>
+          {!hasExam && (
+            <p className="text-xs text-gray-400">
+              {ar ? 'قم بتنزيل النموذج وتعبئته ثم رفعه من صفحة رفع البيانات (تبويب "درجات الاختبار")' : 'Download the template, fill it, then upload from the Upload page (Exam Scores tab)'}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Explanation ── */}
+      <div className="card bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700">
+        <h3 className="font-bold text-blue-700 dark:text-blue-300 mb-2">
+          {ar ? 'معيار 1.3 — تحليل الفجوة بين التقويم التكويني والاختبار الختامي' : 'Indicator 1.3 — Gap Analysis: Continuous Assessment vs Final Exam'}
+        </h3>
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          {ar
+            ? 'يقيس هذا المعيار الفجوة بين درجات التقويم التكويني (المستمر) ودرجات الاختبار النهائي لكل مادة. الفجوة الكبيرة تشير إلى عدم اتساق في قياس تحصيل الطالب، أو أن الطالب يؤدي جيداً في الأعمال المستمرة لكنه يعاني في الاختبارات (أو العكس).'
+            : 'This indicator measures the gap between continuous/formative assessment scores and final exam scores per subject. A large gap suggests inconsistency in measuring student achievement, or that students perform well in ongoing work but struggle in exams (or vice versa).'}
+        </p>
+        <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+          <div className="bg-green-100 dark:bg-green-900/20 rounded p-2 text-center">
+            <div className="font-bold text-green-700">{ar ? 'فجوة ≤ 5' : 'Gap ≤ 5'}</div>
+            <div className="text-gray-500">{ar ? 'اتساق جيد' : 'Good consistency'}</div>
+          </div>
+          <div className="bg-yellow-100 dark:bg-yellow-900/20 rounded p-2 text-center">
+            <div className="font-bold text-yellow-700">{ar ? '5 < فجوة ≤ 15' : '5 < Gap ≤ 15'}</div>
+            <div className="text-gray-500">{ar ? 'فجوة متوسطة' : 'Moderate gap'}</div>
+          </div>
+          <div className="bg-red-100 dark:bg-red-900/20 rounded p-2 text-center">
+            <div className="font-bold text-red-700">{ar ? 'فجوة > 15' : 'Gap > 15'}</div>
+            <div className="text-gray-500">{ar ? 'فجوة كبيرة — تحتاج متابعة' : 'Large gap — needs review'}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Comparison data (only if both uploaded) ── */}
+      {gapData.length > 0 && (
+        <>
+          {/* S3 Comparison Chart */}
+          {s3ChartData.length > 0 && (
+            <div className="card print:shadow-none print:border">
+              <SectionTitle num={1} ar="مقارنة التكويني مع الاختبار (الفصل الثالث)" en="Formative vs Exam Comparison (S3)" />
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={s3ChartData} margin={{ top: 5, right: 10, left: -10, bottom: 50 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
+                  <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="formative" name={ar ? 'التكويني (ف3)' : 'Formative (S3)'} fill="#1D5E3F" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="exam" name={ar ? 'الاختبار (ف3)' : 'Exam (S3)'} fill="#2563eb" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Detailed table */}
+          <div className="card print:shadow-none print:border overflow-x-auto">
+            <SectionTitle num={2} ar="جدول الفجوات التفصيلي" en="Detailed Gap Table" />
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th>{ar ? 'المادة' : 'Subject'}</th>
+                  <th>{ar ? 'تكويني ف1' : 'Formative S1'}</th>
+                  <th>{ar ? 'اختبار ف1' : 'Exam S1'}</th>
+                  <th>{ar ? 'فجوة ف1' : 'Gap S1'}</th>
+                  <th>{ar ? 'تكويني ف3' : 'Formative S3'}</th>
+                  <th>{ar ? 'اختبار ف3' : 'Exam S3'}</th>
+                  <th>{ar ? 'فجوة ف3' : 'Gap S3'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gapData.map(d => (
+                  <tr key={d.sc}>
+                    <td className="font-medium">{d.label}</td>
+                    <td className="font-mono text-sm">{d.avgFS1 !== null ? d.avgFS1 : '—'}</td>
+                    <td className="font-mono text-sm">{d.avgES1 !== null ? d.avgES1 : '—'}</td>
+                    <td><GapBadge gap={d.gapS1} /></td>
+                    <td className="font-mono text-sm">{d.avgFS3 !== null ? d.avgFS3 : '—'}</td>
+                    <td className="font-mono text-sm">{d.avgES3 !== null ? d.avgES3 : '—'}</td>
+                    <td><GapBadge gap={d.gapS3} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ── If only formative ── */}
+      {hasFormative && !hasExam && (
+        <div className="card text-center py-8 text-gray-500">
+          <p className="mb-3">{ar ? 'تم رفع بيانات التكويني. أضف درجات الاختبار لإظهار المقارنة.' : 'Formative data uploaded. Add exam scores to see the comparison.'}</p>
+          <button onClick={downloadExamTemplate} className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+            <DownloadIcon size={14} />{ar ? 'تنزيل نموذج الاختبار' : 'Download Exam Template'}
+          </button>
+        </div>
+      )}
+
+      {/* ── If only exam ── */}
+      {!hasFormative && hasExam && (
+        <div className="card text-center py-8 text-gray-500">
+          <p className="mb-3">{ar ? 'تم رفع درجات الاختبار. أضف بيانات التكويني لإظهار المقارنة.' : 'Exam scores uploaded. Add formative data to see the comparison.'}</p>
+          <button onClick={downloadFormativeTemplate} className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
+            <DownloadIcon size={14} />{ar ? 'تنزيل نموذج التكويني' : 'Download Formative Template'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN REPORTS PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function Reports({ lang }: ReportsProps) {
   const ar = lang === 'ar'
-  const [tab, setTab] = useState<'achievement' | 'trends'>('achievement')
+  const [tab, setTab] = useState<'achievement' | 'trends' | 'formative_gap'>('achievement')
   const [filter, setFilter] = useState<AnalysisFilter>({
     yearId: dataStore.getYears().slice(-1)[0],
     semester: 'annual',
@@ -1006,6 +1222,12 @@ export default function Reports({ lang }: ReportsProps) {
         >
           {ar ? '📈 اتجاهات التقدم (معيار 1.2)' : '📈 Progress Trends (1.2)'}
         </button>
+        <button
+          className={clsx('px-4 py-2 text-sm font-medium border-b-2 transition-colors', tab === 'formative_gap' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700')}
+          onClick={() => setTab('formative_gap')}
+        >
+          {ar ? '🔍 الفجوات التكويني/الختامي (معيار 1.3)' : '🔍 Formative/Exam Gaps (1.3)'}
+        </button>
       </div>
 
       {/* Filters */}
@@ -1021,10 +1243,9 @@ export default function Reports({ lang }: ReportsProps) {
       </div>
 
       {/* Report content */}
-      {tab === 'achievement'
-        ? <AchievementReport lang={lang} filter={filter} />
-        : <ProgressTrendsReport lang={lang} filter={filter} />
-      }
+      {tab === 'achievement' && <AchievementReport lang={lang} filter={filter} />}
+      {tab === 'trends' && <ProgressTrendsReport lang={lang} filter={filter} />}
+      {tab === 'formative_gap' && <FormativeGapReport lang={lang} filter={filter} />}
     </div>
   )
 }

@@ -133,11 +133,34 @@ export interface UploadResult {
   sections: string[];
 }
 
+// ===== FORMATIVE / EXAM COMPONENT SCORES =====
+export interface FormativeScore {
+  studentId: string;
+  yearId: string;
+  subjectCode: SubjectCode;
+  grade: number;
+  section: string;
+  s1: number | null;   // التقويم التكويني/المستمر للفصل الأول
+  s3: number | null;   // التقويم التكويني/المستمر للفصل الثالث
+}
+
+export interface ExamScore {
+  studentId: string;
+  yearId: string;
+  subjectCode: SubjectCode;
+  grade: number;
+  section: string;
+  s1: number | null;   // درجة اختبار الفصل الأول
+  s3: number | null;   // درجة اختبار الفصل الثالث
+}
+
 // ===== STORED DATA (in localStorage / D1) =====
 export interface YearData {
   yearId: string;
   records: StudentRecord[];
   diagnosticScores: DiagnosticScore[];
+  formativeScores: FormativeScore[];
+  examScores: ExamScore[];
   uploadedAt: string;
 }
 
