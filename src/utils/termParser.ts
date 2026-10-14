@@ -92,3 +92,116 @@ export function parseTermFile(buffer: ArrayBuffer, yearId: string, semester: 1 |
 
   return scores
 }
+
+// Core subject keywords for Ministry NOOR format
+const NOOR_CORE_KEYWORDS: [string[], SubjectCode][] = [
+  [['الرياضيات'], 'math'],
+  [['العلوم'], 'science'],
+  [['اللغة الإنجليزية', 'اللغة الانجليزية'], 'english'],
+  [['التربية الإسلامية'], 'islamic'],
+  [['الدراسات الاجتماعية'], 'social'],
+  [['اللغة العربية'], 'arabic'],
+  [['الفيزياء'], 'physics'],
+  [['الكيمياء'], 'chemistry'],
+  [['الأحياء'], 'biology'],
+]
+
+/**
+ * Parse Ministry NOOR term results file.
+ * Sheet "تحليل النتائج": row1=subject names (merged), row2=sub-column labels, rows3+=data.
+ * Auto-detects semester from row2 term label (الفصل الاول/الثاني/الثالث).
+ * Merges Physics/Chemistry/Biology variant columns (takes best non-null score).
+ */
+export function parseNoorTermFile(buffer: ArrayBuffer, yearId: string): TermScore[] {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const ws = wb.Sheets['تحليل النتائج']
+  if (!ws) return []
+
+  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, {
+    header: 1, defval: null,
+  }) as (string | number | null)[][]
+
+  if (rows.length < 3) return []
+
+  const row1 = rows[0]
+  const row2 = rows[1]
+
+  // Detect semester from row2 labels
+  let semester: 1 | 2 | 3 = 1
+  const termLabelMap: Record<string, 1 | 2 | 3> = {
+    'الفصل الاول': 1, 'الفصل الثاني': 2, 'الفصل الثالث': 3,
+  }
+  for (const v of row2) {
+    const s = String(v || '')
+    if (s in termLabelMap) { semester = termLabelMap[s]; break }
+  }
+  const termLabel = Object.keys(termLabelMap).find(k => termLabelMap[k] === semester)!
+
+  // Find subject start columns (0-indexed, skip first 16 fixed cols)
+  const subjectStarts: { col: number; name: string }[] = []
+  for (let i = 16; i < row1.length; i++) {
+    if (row1[i]) subjectStarts.push({ col: i, name: String(row1[i]) })
+  }
+
+  // Map subjectCode → [termScoreColIndex]
+  const codeTermCols = new Map<SubjectCode, number[]>()
+  for (let i = 0; i < subjectStarts.length; i++) {
+    const { col: start, name } = subjectStarts[i]
+    const end = i + 1 < subjectStarts.length ? subjectStarts[i + 1].col - 1 : row1.length - 1
+
+    const match = NOOR_CORE_KEYWORDS.find(([kws]) => kws.some(k => name.includes(k)))
+    if (!match) continue
+    const code = match[1]
+
+    for (let c = start; c <= end; c++) {
+      if (String(row2[c] || '') === termLabel) {
+        if (!codeTermCols.has(code)) codeTermCols.set(code, [])
+        codeTermCols.get(code)!.push(c)
+        break
+      }
+    }
+  }
+
+  if (codeTermCols.size === 0) return []
+
+  const scores: TermScore[] = []
+
+  for (let r = 2; r < rows.length; r++) {
+    const row = rows[r]
+    if (!row) continue
+
+    const studentId = String(row[1] ?? '').trim()
+    if (!studentId || studentId === 'رقم الطالب') continue
+
+    const gradeStr = String(row[2] ?? '')
+    const gradeMatch = gradeStr.match(/\d+/)
+    const grade = gradeMatch ? parseInt(gradeMatch[0]) : 0
+    if (grade < 1 || grade > 12) continue
+
+    const sectionStr = String(row[4] ?? '')
+    const secMatch = sectionStr.match(/\/(\d+)$/)
+    const section = secMatch ? secMatch[1] : '1'
+
+    for (const [code, cols] of codeTermCols) {
+      let best: number | null = null
+      for (const c of cols) {
+        const v = row[c]
+        if (v !== null && v !== undefined && v !== '') {
+          const n = typeof v === 'number' ? v : parseFloat(String(v))
+          if (!isNaN(n) && n > 0) best = best === null ? n : Math.max(best, n)
+        }
+      }
+      if (best !== null) {
+        scores.push({ studentId, yearId, semester, subjectCode: code, grade, section, score: best })
+      }
+    }
+  }
+
+  return scores
+}
+
+/** Returns true if the buffer looks like a Ministry NOOR term report */
+export function isNoorTermFile(buffer: ArrayBuffer): boolean {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  return wb.SheetNames.includes('تحليل النتائج')
+}
