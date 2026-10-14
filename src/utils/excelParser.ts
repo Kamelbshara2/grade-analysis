@@ -195,6 +195,112 @@ function bestScore(a: number | null, b: number | null): number | null {
   return Math.max(a, b)
 }
 
+// ── Grade name → number map (Ministry NOOR student roster format) ─────────────
+const GRADE_NAME_MAP: Record<string, number> = {
+  'الصف الخامس': 5,
+  'الصف السادس': 6,
+  'الصف السابع': 7,
+  'الصف الثامن': 8,
+  'الصف التاسع': 9,
+  'الصف العاشر': 10,
+  'الصف الحادي عشر': 11,
+  'الصف الثاني عشر': 12,
+}
+
+/**
+ * Parse a Ministry NOOR student roster file.
+ * Row 0: title row (skip)
+ * Row 1: headers  (رقم الطالب at col 3, الاسم بالعربية col 4,
+ *                  الجنسية col 8, الشعبة col 15, المسار col 16, الصف الدراسي col 17)
+ * Row 2+: data
+ *
+ * Produces StudentRecord[] with empty grades so diagnostic / term scores
+ * can later be linked by studentId.
+ */
+export function parseStudentRosterFile(
+  buffer: ArrayBuffer,
+  yearId: string,
+): { records: StudentRecord[]; errors: string[] } {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  }) as (string | number | null)[][]
+
+  const errors: string[] = []
+  const records: StudentRecord[] = []
+
+  if (raw.length < 3) {
+    errors.push('الملف فارغ أو غير صحيح')
+    return { records, errors }
+  }
+
+  // Detect header row — find the row that contains 'رقم الطالب'
+  let headerIdx = -1
+  let idCol = 3, nameCol = 4, natCol = 8, sectionCol = 15, trackCol = 16, gradeCol = 17
+  for (let i = 0; i < Math.min(5, raw.length); i++) {
+    const row = raw[i]
+    for (let c = 0; c < row.length; c++) {
+      if (String(row[c] ?? '').trim() === 'رقم الطالب') {
+        headerIdx = i
+        idCol = c
+      }
+      if (String(row[c] ?? '').trim() === 'الاسم بالعربية') nameCol = c
+      if (String(row[c] ?? '').trim().includes('الجنسية')) natCol = c
+      if (String(row[c] ?? '').trim() === 'الشعبة') sectionCol = c
+      if (String(row[c] ?? '').trim() === 'المسار') trackCol = c
+      if (String(row[c] ?? '').trim() === 'الصف الدراسي') gradeCol = c
+    }
+    if (headerIdx >= 0) break
+  }
+
+  if (headerIdx === -1) {
+    errors.push('لم يتم العثور على صف العناوين (رقم الطالب)')
+    return { records, errors }
+  }
+
+  for (let r = headerIdx + 1; r < raw.length; r++) {
+    const row = raw[r]
+    if (!row) continue
+
+    const studentId = String(row[idCol] ?? '').trim()
+    if (!studentId || studentId === 'رقم الطالب') continue
+
+    const name = String(row[nameCol] ?? '').trim()
+    const natRaw = String(row[natCol] ?? '').trim()
+    const nationality: Nationality = natRaw === 'الإمارات العربية المتحدة' ? 'citizen'
+      : natRaw ? 'expat' : 'unknown'
+
+    const gradeRaw = String(row[gradeCol] ?? '').trim()
+    const grade = GRADE_NAME_MAP[gradeRaw] ?? 0
+    if (!grade) { errors.push(`صف غير معروف: ${gradeRaw} (الطالب ${studentId})`); continue }
+
+    const trackRaw = String(row[trackCol] ?? '').trim()
+    const track: Track = trackRaw === 'متقدم' ? 'advanced' : 'general'
+
+    const section = String(row[sectionCol] ?? '1').trim()
+    const cycle: Cycle = getCycle(grade)
+
+    records.push({
+      student: { id: studentId, name, nationality },
+      yearId,
+      grade,
+      track,
+      section,
+      sectionRaw: `${grade}/${section}`,
+      cycle,
+      grades: {},
+      annualAvg: null,
+      annualTotal: null,
+      status: 'unknown',
+    })
+  }
+
+  return { records, errors }
+}
+
 // Parse a nationality CSV: student_id,nationality (citizen/expat)
 export function parseNationalityFile(
   buffer: ArrayBuffer

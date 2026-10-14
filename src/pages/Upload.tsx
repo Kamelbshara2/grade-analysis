@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { Upload as UploadIcon, CheckCircle, AlertCircle, FileSpreadsheet, Download } from 'lucide-react'
 import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
-import { parseAnnualGradeFile, parseNationalityFile } from '@/utils/excelParser'
+import { parseAnnualGradeFile, parseNationalityFile, parseStudentRosterFile } from '@/utils/excelParser'
 import { parseDiagnosticFile } from '@/utils/diagnosticParser'
 import { parseFormativeFile, parseExamFile } from '@/utils/formativeParser'
 import { parseTermFile } from '@/utils/termParser'
@@ -14,7 +14,7 @@ interface UploadProps {
   lang: Language
 }
 
-type UploadMode = 'annual' | 'diagnostic' | 'nationality' | 'formative' | 'exam' | 'term'
+type UploadMode = 'annual' | 'diagnostic' | 'nationality' | 'formative' | 'exam' | 'term' | 'roster'
 
 interface UploadState {
   status: 'idle' | 'processing' | 'success' | 'error'
@@ -124,6 +124,26 @@ export default function Upload({ lang }: UploadProps) {
             sections: [],
           },
         })
+      } else if (mode === 'roster') {
+        const { records, errors } = parseStudentRosterFile(buffer, yearId.trim())
+        if (records.length === 0 && errors.length > 0) {
+          setState({ status: 'error', error: errors.join('\n') })
+          return
+        }
+        dataStore.importYearData(yearId.trim(), records)
+        const sections = [...new Set(records.map(r => `${r.grade}/${r.section}`))]
+        setState({
+          status: 'success',
+          result: {
+            yearId: yearId.trim(),
+            totalRows: records.length,
+            imported: records.length,
+            skipped: 0,
+            errors,
+            subjects: [],
+            sections,
+          },
+        })
       } else {
         const map = parseNationalityFile(buffer)
         // Re-apply to all years
@@ -168,6 +188,7 @@ export default function Upload({ lang }: UploadProps) {
   }
 
   const tabs: { key: UploadMode; label: string }[] = [
+    { key: 'roster', label: lang === 'ar' ? 'كشف الطلاب' : 'Student Roster' },
     { key: 'annual', label: t('upload_annual') },
     { key: 'diagnostic', label: t('upload_diagnostic') },
     { key: 'nationality', label: t('upload_nationality') },
@@ -198,7 +219,7 @@ export default function Upload({ lang }: UploadProps) {
       </div>
 
       {/* Year input */}
-      {mode !== 'nationality' && (  /* nationality applies to all years */
+      {mode !== 'nationality' && (  /* nationality is year-independent */
         <div className="flex gap-4 flex-wrap">
           <div>
             <label className="label">{t('upload_year_label')}</label>
@@ -300,6 +321,13 @@ export default function Upload({ lang }: UploadProps) {
               <li className="text-orange-600">{state.result.errors.length} {lang === 'ar' ? 'تحذيرات' : 'warnings'}</li>
             )}
           </ul>
+          {mode === 'roster' && (
+            <p className="text-xs text-green-700 dark:text-green-400 mt-2 pt-2 border-t border-green-200">
+              {lang === 'ar'
+                ? '✅ كشف الطلاب جاهز. يمكنك الآن رفع نتائج الاختبار التشخيصي.'
+                : '✅ Roster ready. You can now upload diagnostic test results.'}
+            </p>
+          )}
         </div>
       )}
 
