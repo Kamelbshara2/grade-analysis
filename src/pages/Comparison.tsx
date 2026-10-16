@@ -28,7 +28,7 @@ export default function Comparison({ lang }: ComparisonProps) {
   const years = dataStore.getYears()
   const [selectedYears, setSelectedYears] = useState<string[]>(years.slice(-3))
   const [subject, setSubject] = useState<SubjectCode>('arabic')
-  const [metric, setMetric] = useState<string>('above75Rate')
+  const [metric, setMetric] = useState<string>('passRate')
   const [grade, setGrade] = useState<number | undefined>()
 
   function toggleYear(y: string) {

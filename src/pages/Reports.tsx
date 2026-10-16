@@ -878,8 +878,8 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
   const ar = lang === 'ar'
   const yearId = filter.yearId ?? ''
 
-  const allFormative: FormativeScore[] = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
-  const allExam: ExamScore[] = useMemo(() => dataStore.getExamScores(yearId), [yearId])
+  const allFormative: FormativeScore[] = dataStore.getFormativeScores(yearId)
+  const allExam: ExamScore[] = dataStore.getExamScores(yearId)
 
   // Apply grade filter — health_science has no exam so exclude from gap analysis
   const formativeScores = useMemo(() =>
@@ -986,7 +986,7 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
         : null
       return { grade: g, s1Total, s2Rate, s3Total, crossGap }
     })
-  }, [allFormative, allExam])
+  }, [formativeScores, examScores])
 
   if (!hasFormative && !hasExam) {
     return (
