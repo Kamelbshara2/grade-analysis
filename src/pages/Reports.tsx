@@ -9,7 +9,7 @@ import type { Language, AnalysisFilter, SubjectCode, Semester, Cycle, FormativeS
 import { dataStore } from '@/store/dataStore'
 import {
   filterRecords, computeSubjectStats, extractScores, round2,
-  computeMultiYearProgress, computeSemesterGaps,
+  computeMultiYearProgress,
   computeAchievementIndicators, getProportionLabel, getLetterGrade,
   type AchievementIndicator, type SemesterGap,
 } from '@/utils/statistics'
@@ -513,10 +513,7 @@ function ProgressTrendsReport({ lang, filter }: { lang: Language; filter: Analys
     }
   }, [records, filter.grade])
 
-  // Semester gaps for معيار 1.3
-  const semGaps = useMemo(() => computeSemesterGaps(records), [records])
-
-  if (records.length === 0 || years.length === 0) {
+if (records.length === 0 || years.length === 0) {
     return <div className="card text-center py-12 text-gray-400">{t('no_data')}</div>
   }
 
@@ -833,126 +830,6 @@ function ProgressTrendsReport({ lang, filter }: { lang: Language; filter: Analys
         })}
       </div>
 
-      {/* ── Section 4: معيار 1.3 — تحليل الفجوات (تكويني vs ختامي) ── */}
-      <div className="card print:shadow-none print:border print:break-before-page">
-        <SectionTitle num={4} ar="معيار 1.3 — تحليل الفجوات بين التكويني والختامي" en="Indicator 1.3 — Formative vs. Summative Gap Analysis" />
-        <SectionToggle expanded={expanded.has('s4')} onClick={() => toggle('s4')}>
-          {expanded.has('s4') ? (ar ? 'إخفاء' : 'Hide') : (ar ? 'إظهار' : 'Show')}
-        </SectionToggle>
-        {!expanded.has('s4') && null}
-        {expanded.has('s4') && (
-          <>
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-5 text-sm">
-              <h3 className="font-bold text-blue-700 mb-2">
-                {ar ? 'منهجية الحساب' : 'Calculation Methodology'}
-              </h3>
-              <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-xs">
-                {ar
-                  ? 'يُحسب هذا المؤشر من الفرق بين درجة الفصل الثالث (الاختبار الختامي — ف3) ودرجة الفصل الأول (الاختبار التكويني — ف1). القيمة الموجبة تعني تحسناً، والسالبة تعني تراجعاً بين التكويني والختامي.'
-                  : 'This indicator is computed as the gap between Semester 3 (summative exam — S3) and Semester 1 (formative/continuous — S1). Positive = improvement from formative to summative; negative = decline.'}
-              </p>
-            </div>
-
-            {semGaps.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">
-                {ar ? 'لا تتوفر بيانات فصلية كافية.' : 'Insufficient semester data.'}
-              </p>
-            ) : (
-              <>
-                {/* Gap bar chart */}
-                <div className="mb-5">
-                  <p className="text-xs text-gray-500 mb-2">
-                    {ar ? 'الفجوة بين ف1 (تكويني) و ف3 (ختامي) — متوسط الفصل' : 'Gap S1 (formative) → S3 (summative) — semester averages'}
-                  </p>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart
-                      data={semGaps.map(g => ({
-                        name: ar ? g.subjectNameAr : g.subjectNameEn,
-                        gap: g.gapS1S3,
-                        sc: g.subjectCode,
-                      }))}
-                      margin={{ top: 5, right: 10, left: -10, bottom: 45 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip formatter={(v: number) => v > 0 ? `+${v}` : `${v}`} />
-                      <ReferenceLine y={0} stroke="#6b7280" />
-                      <Bar dataKey="gap" name={ar ? 'الفجوة ف1→ف3' : 'S1→S3 Gap'} radius={[3, 3, 0, 0]}>
-                        {semGaps.map((g, i) => (
-                          <Cell key={i} fill={(g.gapS1S3 ?? 0) >= 0 ? '#22c55e' : (g.gapS1S3 ?? 0) > -8 ? '#f97316' : '#ef4444'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* Detail table */}
-                <div className="overflow-x-auto mb-5">
-                  <table className="table-base">
-                    <thead>
-                      <tr>
-                        <th>{ar ? 'المادة' : 'Subject'}</th>
-                        <th>{ar ? 'متوسط ف1 (تكويني)' : 'S1 Avg (Formative)'}</th>
-                        <th>{ar ? 'متوسط ف3 (ختامي)' : 'S3 Avg (Summative)'}</th>
-                        <th>{ar ? 'الفجوة ف1→ف3' : 'S1→S3 Gap'}</th>
-                        <th>{ar ? 'طلاب تراجعوا' : 'Students Declined'}</th>
-                        <th>{ar ? 'طلاب تحسّنوا' : 'Students Improved'}</th>
-                        <th>{ar ? 'الأولوية' : 'Priority'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {semGaps.map(g => {
-                        const priorityColors: Record<string, string> = {
-                          critical: 'bg-red-100 text-red-800', high: 'bg-orange-100 text-orange-800',
-                          medium: 'bg-yellow-100 text-yellow-800', low: 'bg-blue-100 text-blue-800',
-                          ok: 'bg-green-100 text-green-800',
-                        }
-                        const priorityAr: Record<string, string> = {
-                          critical: 'حرج', high: 'عالٍ', medium: 'متوسط', low: 'منخفض', ok: 'جيد',
-                        }
-                        return (
-                          <tr key={g.subjectCode}>
-                            <td className="font-medium">{ar ? g.subjectNameAr : g.subjectNameEn}</td>
-                            <td className="font-mono text-sm">{g.avgS1 !== null ? g.avgS1.toFixed(1) : '—'}</td>
-                            <td className="font-mono text-sm">{g.avgS3 !== null ? g.avgS3.toFixed(1) : '—'}</td>
-                            <td className={clsx('font-mono text-sm font-bold', (g.gapS1S3 ?? 0) >= 0 ? 'text-green-600' : 'text-red-600')}>
-                              {g.gapS1S3 !== null ? (g.gapS1S3 > 0 ? `+${g.gapS1S3}` : `${g.gapS1S3}`) : '—'}
-                            </td>
-                            <td className="font-mono text-sm text-red-600">{g.studentsWithDrop} / {g.totalStudents}</td>
-                            <td className="font-mono text-sm text-green-600">{g.studentsWithGain} / {g.totalStudents}</td>
-                            <td>
-                              <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', priorityColors[g.priority])}>
-                                {ar ? priorityAr[g.priority] : g.priority}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Descriptive analysis */}
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                  <p className="font-medium mb-2">{ar ? 'التحليل الوصفي:' : 'Descriptive Analysis:'}</p>
-                  {semGaps.map(g => {
-                    const name = ar ? g.subjectNameAr : g.subjectNameEn
-                    const gapStr = g.gapS1S3 !== null ? (g.gapS1S3 > 0 ? `↑ +${g.gapS1S3}` : `↓ ${g.gapS1S3}`) : '—'
-                    return (
-                      <p key={g.subjectCode}>
-                        {ar
-                          ? `• ${name}: الفجوة بين الفصل الأول (تكويني) والفصل الثالث (ختامي) = ${gapStr} — ${g.studentsWithDrop} طالباً تراجعوا في الاختبار الختامي مقارنة بالتكويني.`
-                          : `• ${name}: S1 (formative) → S3 (summative) gap = ${gapStr} — ${g.studentsWithDrop} students declined from formative to summative.`}
-                      </p>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-          </>
-        )}
-      </div>
     </div>
   )
 }
