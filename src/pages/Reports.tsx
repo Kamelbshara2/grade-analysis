@@ -637,62 +637,99 @@ if (records.length === 0 || years.length === 0) {
       </div>
 
       {/* ── Section 2: منحنى الاتجاه العام عبر السنوات ── */}
-      {years.length >= 2 && (
-        <div className="card print:shadow-none print:border">
-          <SectionTitle num={2} ar="منحنى الاتجاه العام عبر السنوات" en="Multi-Year Trend Line" />
-          <SectionToggle expanded={expanded.has('s2')} onClick={() => toggle('s2')}>
-            {expanded.has('s2') ? (ar ? 'إخفاء' : 'Hide') : (ar ? 'إظهار' : 'Show')}
-          </SectionToggle>
-          {expanded.has('s2') && (
-            <>
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={trendData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="yearId" tick={{ fontSize: 10 }} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Legend wrapperStyle={{ fontSize: 10 }} />
-                  {subjectCodes.map((sc, i) => (
-                    <Line key={sc} type="monotone" dataKey={sc}
-                      name={ar ? SUBJECT_LABELS[sc]?.ar : SUBJECT_LABELS[sc]?.en}
-                      stroke={SUBJECT_COLORS[i % SUBJECT_COLORS.length]}
-                      dot={{ r: 4 }} strokeWidth={2}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="overflow-x-auto mt-4">
-                <table className="table-base">
-                  <thead>
-                    <tr>
-                      <th>{ar ? 'المادة' : 'Subject'}</th>
-                      {years.map(y => <th key={y}>{y}</th>)}
-                      <th>Δ {ar ? 'الكلي' : 'Total'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {subjectCodes.map(sc => {
-                      const vals = years.map(y => trendData.find(d => d.yearId === y)?.[sc] as number | undefined)
-                      const first = vals.find(v => v !== undefined)
-                      const last = [...vals].reverse().find(v => v !== undefined)
-                      const delta = (first !== undefined && last !== undefined) ? round2(last - first) : null
-                      return (
-                        <tr key={sc}>
-                          <td className="font-medium">{ar ? SUBJECT_LABELS[sc]?.ar : SUBJECT_LABELS[sc]?.en}</td>
-                          {vals.map((v, i) => <td key={i} className="font-mono text-sm">{v !== undefined ? v.toFixed(1) : '—'}</td>)}
-                          <td className={clsx('font-mono text-sm font-bold', delta === null ? '' : delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : '')}>
-                            {delta !== null ? (delta > 0 ? `+${delta}` : `${delta}`) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {years.length >= 2 && (() => {
+        // School-wide average per year (avg of all subject averages)
+        const schoolTrendData = trendData.map(row => {
+          const vals = subjectCodes.map(sc => row[sc] as number | undefined).filter((v): v is number => v !== undefined)
+          return { yearId: row.yearId as string, avg: vals.length ? round2(vals.reduce((a, b) => a + b, 0) / vals.length) : null }
+        })
+        return (
+          <>
+            {/* School-wide average trend */}
+            <div className="card print:shadow-none print:border">
+              <SectionTitle num={2} ar="منحنى الاتجاه العام للمدرسة عبر السنوات" en="School-Wide Average Trend" />
+              <SectionToggle expanded={expanded.has('s2')} onClick={() => toggle('s2')}>
+                {expanded.has('s2') ? (ar ? 'إخفاء' : 'Hide') : (ar ? 'إظهار' : 'Show')}
+              </SectionToggle>
+              {expanded.has('s2') && (
+                <>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart data={schoolTrendData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="yearId" tick={{ fontSize: 10 }} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={v => `${v}`} />
+                      <Tooltip formatter={(v: number) => [`${v}%`, ar ? 'معدل المدرسة' : 'School Avg']} />
+                      <Line type="monotone" dataKey="avg" stroke="#1D5E3F" dot={{ r: 5 }} strokeWidth={2.5} name={ar ? 'معدل المدرسة' : 'School Avg'} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  {/* Year-by-year value row */}
+                  <div className="flex gap-6 mt-3 flex-wrap">
+                    {schoolTrendData.map((d, i) => (
+                      <div key={i} className="text-center">
+                        <div className="text-xs text-gray-500">{d.yearId}</div>
+                        <div className="text-sm font-bold text-primary-700">{d.avg !== null ? `${d.avg}%` : '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Per-subject trend — one card per subject */}
+            {subjectCodes.map((sc, idx) => {
+              const subjectColor = SUBJECT_COLORS[idx % SUBJECT_COLORS.length]
+              const subjectName = ar ? SUBJECT_LABELS[sc]?.ar ?? sc : SUBJECT_LABELS[sc]?.en ?? sc
+              const subjectTrend = trendData.map(row => ({
+                yearId: row.yearId as string,
+                avg: (row[sc] as number | undefined) ?? null,
+              }))
+              const avgs = subjectTrend.map(d => d.avg)
+              const first = avgs.find(v => v !== null)
+              const last = [...avgs].reverse().find(v => v !== null)
+              const delta = (first !== null && first !== undefined && last !== null && last !== undefined) ? round2(last - first) : null
+              return (
+                <div key={sc} className="card print:shadow-none print:border mt-4" style={{ borderLeftColor: subjectColor, borderLeftWidth: 3 }}>
+                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+                      style={{ backgroundColor: subjectColor }}>
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-primary-700 text-sm">{subjectName}</h3>
+                      <p className="text-[10px] text-gray-400">{ar ? 'اتجاه المعدل عبر السنوات' : 'Average trend over years'}</p>
+                    </div>
+                    {delta !== null && (
+                      <span className={clsx('ms-auto text-sm font-bold', delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : 'text-gray-400')}>
+                        {delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '→ 0'}
+                      </span>
+                    )}
+                  </div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={subjectTrend} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="yearId" tick={{ fontSize: 10 }} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(v: number) => [`${v}`, ar ? 'المعدل' : 'Avg']} />
+                      <Line type="monotone" dataKey="avg" stroke={subjectColor} dot={{ r: 4 }} strokeWidth={2} name={ar ? 'المعدل' : 'Average'} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  {/* Year-by-year value row */}
+                  <div className="flex gap-6 mt-3 flex-wrap">
+                    {subjectTrend.map((d, i) => (
+                      <div key={i} className="text-center">
+                        <div className="text-xs text-gray-500">{d.yearId}</div>
+                        <div className="text-sm font-bold" style={{ color: subjectColor }}>
+                          {d.avg !== null ? `${d.avg}` : '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )
+      })()}
 
       {/* ── Section 3: Per-subject — one card per subject, print-page-break ── */}
       <div className="space-y-0">

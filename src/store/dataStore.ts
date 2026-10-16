@@ -35,13 +35,18 @@ let _initPromise: Promise<void> | null = null
 
 /** Merge API data into existing data without overwriting user-added outcomes/scores */
 function mergeApiData(apiData: AppData): void {
-  // Merge year records from API (API is source of truth for grade records)
   for (const [yearId, yearData] of Object.entries(apiData.years)) {
     if (!_data.years[yearId] || _data.years[yearId].records.length === 0) {
       _data.years[yearId] = yearData
+    } else {
+      // Always refresh scores from Neon — they may have been uploaded after the
+      // student records were cached in localStorage
+      if (yearData.formativeScores?.length) _data.years[yearId].formativeScores = yearData.formativeScores
+      if (yearData.examScores?.length) _data.years[yearId].examScores = yearData.examScores
+      if (yearData.termScores?.length) _data.years[yearId].termScores = yearData.termScores
+      if (yearData.diagnosticScores?.length) _data.years[yearId].diagnosticScores = yearData.diagnosticScores
     }
   }
-  // Keep user's local learningOutcomes and outcomeScores
   saveData(_data)
 }
 
