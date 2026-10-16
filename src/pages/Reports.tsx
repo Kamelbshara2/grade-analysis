@@ -11,7 +11,7 @@ import {
   filterRecords, computeSubjectStats, extractScores, round2,
   computeMultiYearProgress,
   computeAchievementIndicators, getProportionLabel, getLetterGrade,
-  type AchievementIndicator, type SemesterGap,
+  type AchievementIndicator,
 } from '@/utils/statistics'
 import { getCycle, SUBJECT_LABELS, getCycleSubjects, getPassMark } from '@/utils/subjectMapping'
 import { downloadFormativeTemplate, downloadExamTemplate } from '@/utils/templateGenerator'
@@ -841,210 +841,415 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
   const ar = lang === 'ar'
   const yearId = filter.yearId ?? ''
 
-  const formativeScores: FormativeScore[] = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
-  const examScores: ExamScore[] = useMemo(() => dataStore.getExamScores(yearId), [yearId])
+  const allFormative: FormativeScore[] = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
+  const allExam: ExamScore[] = useMemo(() => dataStore.getExamScores(yearId), [yearId])
 
-  const hasFormative = formativeScores.length > 0
-  const hasExam = examScores.length > 0
+  // Apply grade filter
+  const formativeScores = useMemo(() =>
+    filter.grade ? allFormative.filter(s => s.grade === filter.grade) : allFormative,
+    [allFormative, filter.grade])
+  const examScores = useMemo(() =>
+    filter.grade ? allExam.filter(s => s.grade === filter.grade) : allExam,
+    [allExam, filter.grade])
 
-  // Compute per-subject gap stats
-  const gapData = useMemo(() => {
-    if (!hasFormative && !hasExam) return []
+  const hasFormative = allFormative.length > 0
+  const hasExam = allExam.length > 0
+  const hasData = formativeScores.length > 0 && examScores.length > 0
 
-    const subjectSet = new Set([
-      ...formativeScores.map(s => s.subjectCode),
-      ...examScores.map(s => s.subjectCode),
-    ])
+  // Helper: average of non-null numbers
+  const avg = (arr: (number | null)[]) => {
+    const v = arr.filter((x): x is number => x !== null)
+    return v.length ? round2(v.reduce((a, b) => a + b, 0) / v.length) : null
+  }
+  const pct = (val: number | null, denom: number) => val !== null ? round2(val / denom * 100) : null
 
-    return [...subjectSet].map(sc => {
-      const fScores = formativeScores.filter(s => s.subjectCode === sc)
-      const eScores = examScores.filter(s => s.subjectCode === sc)
-
-      // S1
-      const fS1 = fScores.map(s => s.s1).filter((v): v is number => v !== null)
-      const eS1 = eScores.map(s => s.s1).filter((v): v is number => v !== null)
-      const avgFS1 = fS1.length ? round2(fS1.reduce((a, b) => a + b, 0) / fS1.length) : null
-      const avgES1 = eS1.length ? round2(eS1.reduce((a, b) => a + b, 0) / eS1.length) : null
-      const gapS1 = avgFS1 !== null && avgES1 !== null ? round2(avgES1 - avgFS1) : null
-
-      // S3
-      const fS3 = fScores.map(s => s.s3).filter((v): v is number => v !== null)
-      const eS3 = eScores.map(s => s.s3).filter((v): v is number => v !== null)
-      const avgFS3 = fS3.length ? round2(fS3.reduce((a, b) => a + b, 0) / fS3.length) : null
-      const avgES3 = eS3.length ? round2(eS3.reduce((a, b) => a + b, 0) / eS3.length) : null
-      const gapS3 = avgFS3 !== null && avgES3 !== null ? round2(avgES3 - avgFS3) : null
-
-      const label = ar ? SUBJECT_LABELS[sc]?.ar ?? sc : SUBJECT_LABELS[sc]?.en ?? sc
-
-      return { sc, label, avgFS1, avgES1, gapS1, avgFS3, avgES3, gapS3, fCount: fScores.length, eCount: eScores.length }
-    }).filter(d => d.fCount > 0 || d.eCount > 0)
-      .sort((a, b) => (Math.abs(a.gapS3 ?? 0) < Math.abs(b.gapS3 ?? 0) ? 1 : -1))
-  }, [formativeScores, examScores, ar])
-
-  // Chart data for S3 comparison
-  const s3ChartData = gapData
-    .filter(d => d.avgFS3 !== null || d.avgES3 !== null)
-    .map(d => ({ name: d.label, formative: d.avgFS3, exam: d.avgES3 }))
-
+  // Gap badge component
   const GapBadge = ({ gap }: { gap: number | null }) => {
     if (gap === null) return <span className="text-gray-400">—</span>
-    const cls = gap >= 0
-      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-    return <span className={clsx('text-xs px-2 py-0.5 rounded-full font-mono font-bold', cls)}>{gap > 0 ? `+${gap}` : gap}</span>
+    const color = Math.abs(gap) <= 5 ? 'bg-green-100 text-green-800' : Math.abs(gap) <= 15 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+    return <span className={clsx('text-xs px-2 py-0.5 rounded-full font-mono font-bold', color)}>{gap > 0 ? `+${gap}%` : `${gap}%`}</span>
+  }
+
+  // ── Subject-level gap data (filtered) ──
+  const subjectGaps = useMemo(() => {
+    const codes = [...new Set([...formativeScores.map(s => s.subjectCode), ...examScores.map(s => s.subjectCode)])] as SubjectCode[]
+    return codes.map(sc => {
+      const fRec = formativeScores.filter(s => s.subjectCode === sc)
+      const eRec = examScores.filter(s => s.subjectCode === sc)
+      // S1
+      const fs1Rate = pct(avg(fRec.map(s => s.s1)), 10)
+      const es1Rate = pct(avg(eRec.map(s => s.s1)), 25)
+      const gapS1 = fs1Rate !== null && es1Rate !== null ? round2(es1Rate - fs1Rate) : null
+      // S3
+      const fs3Rate = pct(avg(fRec.map(s => s.s3)), 10)
+      const es3Rate = pct(avg(eRec.map(s => s.s3)), 25)
+      const gapS3 = fs3Rate !== null && es3Rate !== null ? round2(es3Rate - fs3Rate) : null
+      // S2 (formative only)
+      const s2Rate = pct(avg(fRec.map(s => s.s2 ?? null)), 30)
+      // Totals for cross-semester
+      const s1Total = (avg(fRec.map(s => s.s1)) !== null && avg(eRec.map(s => s.s1)) !== null)
+        ? pct((avg(fRec.map(s => s.s1))! + avg(eRec.map(s => s.s1))!), 35) : null
+      const s3Total = (avg(fRec.map(s => s.s3)) !== null && avg(eRec.map(s => s.s3)) !== null)
+        ? pct((avg(fRec.map(s => s.s3))! + avg(eRec.map(s => s.s3))!), 35) : null
+      const crossGap = s2Rate !== null && (s1Total !== null || s3Total !== null)
+        ? (() => { const ref = (s1Total !== null && s3Total !== null) ? (s1Total + s3Total) / 2 : (s1Total ?? s3Total)!; return round2(s2Rate - ref) })()
+        : null
+      const label = ar ? SUBJECT_LABELS[sc]?.ar ?? sc : SUBJECT_LABELS[sc]?.en ?? sc
+      return { sc, label, fs1Rate, es1Rate, gapS1, fs3Rate, es3Rate, gapS3, s2Rate, s1Total, s3Total, crossGap }
+    }).filter(d => d.fs1Rate !== null || d.es1Rate !== null || d.fs3Rate !== null || d.es3Rate !== null)
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [formativeScores, examScores, ar])
+
+  // ── School-wide averages ──
+  const schoolAvg = useMemo(() => {
+    const fs1Rate = pct(avg(formativeScores.map(s => s.s1)), 10)
+    const es1Rate = pct(avg(examScores.map(s => s.s1)), 25)
+    const gapS1 = fs1Rate !== null && es1Rate !== null ? round2(es1Rate - fs1Rate) : null
+    const fs3Rate = pct(avg(formativeScores.map(s => s.s3)), 10)
+    const es3Rate = pct(avg(examScores.map(s => s.s3)), 25)
+    const gapS3 = fs3Rate !== null && es3Rate !== null ? round2(es3Rate - fs3Rate) : null
+    const s2Rate = pct(avg(formativeScores.map(s => s.s2 ?? null)), 30)
+    const fS1v = avg(formativeScores.map(s => s.s1)); const eS1v = avg(examScores.map(s => s.s1))
+    const fS3v = avg(formativeScores.map(s => s.s3)); const eS3v = avg(examScores.map(s => s.s3))
+    const s1Total = fS1v !== null && eS1v !== null ? pct(fS1v + eS1v, 35) : null
+    const s3Total = fS3v !== null && eS3v !== null ? pct(fS3v + eS3v, 35) : null
+    const crossGap = s2Rate !== null && (s1Total !== null || s3Total !== null)
+      ? (() => { const ref = (s1Total !== null && s3Total !== null) ? (s1Total + s3Total) / 2 : (s1Total ?? s3Total)!; return round2(s2Rate - ref) })()
+      : null
+    return { fs1Rate, es1Rate, gapS1, fs3Rate, es3Rate, gapS3, s2Rate, s1Total, s3Total, crossGap }
+  }, [formativeScores, examScores])
+
+  // ── Per-grade cross-semester data ──
+  const gradeData = useMemo(() => {
+    const grades = [...new Set([...allFormative.map(s => s.grade), ...allExam.map(s => s.grade)])].sort((a, b) => a - b)
+    return grades.map(g => {
+      const fRec = allFormative.filter(s => s.grade === g)
+      const eRec = allExam.filter(s => s.grade === g)
+      const fS1v = avg(fRec.map(s => s.s1)); const eS1v = avg(eRec.map(s => s.s1))
+      const fS3v = avg(fRec.map(s => s.s3)); const eS3v = avg(eRec.map(s => s.s3))
+      const s1Total = fS1v !== null && eS1v !== null ? pct(fS1v + eS1v, 35) : null
+      const s3Total = fS3v !== null && eS3v !== null ? pct(fS3v + eS3v, 35) : null
+      const s2Rate = pct(avg(fRec.map(s => s.s2 ?? null)), 30)
+      const crossGap = s2Rate !== null && (s1Total !== null || s3Total !== null)
+        ? (() => { const ref = (s1Total !== null && s3Total !== null) ? (s1Total + s3Total) / 2 : (s1Total ?? s3Total)!; return round2(s2Rate - ref) })()
+        : null
+      return { grade: g, s1Total, s2Rate, s3Total, crossGap }
+    })
+  }, [allFormative, allExam])
+
+  if (!hasFormative && !hasExam) {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="card border-2 border-dashed border-gray-300 text-center py-8">
+            <p className="text-sm text-gray-500 mb-3">{ar ? 'التقويم التكويني — لم يُرفع بعد' : 'Continuous Assessment — Not uploaded'}</p>
+            <button onClick={downloadFormativeTemplate} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><DownloadIcon size={12} />{ar ? 'نموذج التكويني' : 'Formative Template'}</button>
+          </div>
+          <div className="card border-2 border-dashed border-gray-300 text-center py-8">
+            <p className="text-sm text-gray-500 mb-3">{ar ? 'درجات الاختبار — لم تُرفع بعد' : 'Exam Scores — Not uploaded'}</p>
+            <button onClick={downloadExamTemplate} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><DownloadIcon size={12} />{ar ? 'نموذج الاختبار' : 'Exam Template'}</button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-8 print:space-y-6">
-      <CoverPage
-        lang={lang}
-        filter={filter}
-        reportTitle={ar ? 'تقرير تحليل الفجوات (معيار 1.3)' : 'Gap Analysis Report (1.3)'}
-        reportSubtitle={ar ? 'مقارنة التقويم التكويني / المستمر مع درجات الاختبار' : 'Continuous Assessment vs. Exam Score Comparison'}
-      />
 
-      {/* ── Upload prompts ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className={clsx('card border-2', hasFormative ? 'border-green-300 bg-green-50 dark:bg-green-900/10' : 'border-dashed border-gray-300')}>
-          <div className="flex items-center justify-between mb-3">
+      {/* ── Upload status strip ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 no-print">
+        <div className={clsx('card border-2 py-3', hasFormative ? 'border-green-300 bg-green-50' : 'border-dashed border-gray-300')}>
+          <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-sm">{ar ? 'التقويم التكويني / المستمر' : 'Continuous Assessment'}</h3>
-              <p className="text-xs text-gray-500">{hasFormative ? `${formativeScores.length} ${ar ? 'سجل' : 'records'}` : (ar ? 'لم يُرفع بعد' : 'Not uploaded yet')}</p>
+              <p className="text-xs text-gray-500">{hasFormative ? `${allFormative.length} ${ar ? 'سجل' : 'records'}` : (ar ? 'لم يُرفع' : 'Not uploaded')}</p>
             </div>
-            {hasFormative
-              ? <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">{ar ? 'تم الرفع ✓' : 'Uploaded ✓'}</span>
-              : <button onClick={downloadFormativeTemplate} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                  <DownloadIcon size={12} />{ar ? 'نموذج التكويني' : 'Download Template'}
-                </button>
-            }
+            {hasFormative ? <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">{ar ? 'تم ✓' : 'Done ✓'}</span>
+              : <button onClick={downloadFormativeTemplate} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg"><DownloadIcon size={12} />{ar ? 'نموذج' : 'Template'}</button>}
           </div>
-          {!hasFormative && (
-            <p className="text-xs text-gray-400">
-              {ar ? 'قم بتنزيل النموذج وتعبئته ثم رفعه من صفحة رفع البيانات (تبويب "التقويم التكويني")' : 'Download the template, fill it, then upload from the Upload page (Formative tab)'}
-            </p>
-          )}
         </div>
-
-        <div className={clsx('card border-2', hasExam ? 'border-green-300 bg-green-50 dark:bg-green-900/10' : 'border-dashed border-gray-300')}>
-          <div className="flex items-center justify-between mb-3">
+        <div className={clsx('card border-2 py-3', hasExam ? 'border-green-300 bg-green-50' : 'border-dashed border-gray-300')}>
+          <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-sm">{ar ? 'درجات الاختبار (نهاية الفصل)' : 'Exam Scores (End of Semester)'}</h3>
-              <p className="text-xs text-gray-500">{hasExam ? `${examScores.length} ${ar ? 'سجل' : 'records'}` : (ar ? 'لم يُرفع بعد' : 'Not uploaded yet')}</p>
+              <h3 className="font-semibold text-sm">{ar ? 'درجات الاختبار (نهاية الفصل)' : 'Exam Scores (End of Term)'}</h3>
+              <p className="text-xs text-gray-500">{hasExam ? `${allExam.length} ${ar ? 'سجل' : 'records'}` : (ar ? 'لم تُرفع' : 'Not uploaded')}</p>
             </div>
-            {hasExam
-              ? <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">{ar ? 'تم الرفع ✓' : 'Uploaded ✓'}</span>
-              : <button onClick={downloadExamTemplate} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                  <DownloadIcon size={12} />{ar ? 'نموذج الاختبار' : 'Download Template'}
-                </button>
-            }
+            {hasExam ? <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">{ar ? 'تم ✓' : 'Done ✓'}</span>
+              : <button onClick={downloadExamTemplate} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg"><DownloadIcon size={12} />{ar ? 'نموذج' : 'Template'}</button>}
           </div>
-          {!hasExam && (
-            <p className="text-xs text-gray-400">
-              {ar ? 'قم بتنزيل النموذج وتعبئته ثم رفعه من صفحة رفع البيانات (تبويب "درجات الاختبار")' : 'Download the template, fill it, then upload from the Upload page (Exam Scores tab)'}
-            </p>
+        </div>
+      </div>
+
+      {!hasData && (
+        <div className="card text-center py-10 text-gray-400">
+          {ar ? 'يجب توفر بيانات التكويني والاختبار معاً لإظهار التحليل.' : 'Both formative and exam data are required to show the analysis.'}
+        </div>
+      )}
+
+      {hasData && <>
+        {/* ══════════════════════════════════════════════════════════
+            SECTION 1 — SCHOOL-WIDE AVERAGES: FORMATIVE VS EXAM
+        ══════════════════════════════════════════════════════════ */}
+        <div className="card print:shadow-none print:border print:break-before-page">
+          <SectionTitle num={1}
+            ar="المؤشر الكلي للمدرسة — التكويني مقابل الاختبار"
+            en="School-Wide Average — Formative vs Exam" />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* Term 1 */}
+            <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-900/10 p-5">
+              <h4 className="font-bold text-blue-700 text-sm mb-4 text-center">{ar ? 'الفصل الأول (ف1)' : 'Term 1'}</h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
+                  <span className="text-sm text-gray-600">{ar ? 'التكويني (من 10)' : 'Formative (/10)'}</span>
+                  <span className="font-bold text-lg text-primary-700">{schoolAvg.fs1Rate !== null ? `${schoolAvg.fs1Rate}%` : '—'}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
+                  <span className="text-sm text-gray-600">{ar ? 'الاختبار (من 25)' : 'Exam (/25)'}</span>
+                  <span className="font-bold text-lg text-blue-700">{schoolAvg.es1Rate !== null ? `${schoolAvg.es1Rate}%` : '—'}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: schoolAvg.gapS1 === null ? '#f3f4f6' : Math.abs(schoolAvg.gapS1) <= 5 ? '#f0fdf4' : Math.abs(schoolAvg.gapS1) <= 15 ? '#fffbeb' : '#fef2f2' }}>
+                  <span className="text-sm font-semibold">{ar ? 'الفجوة (اختبار − تكويني)' : 'Gap (Exam − Formative)'}</span>
+                  <GapBadge gap={schoolAvg.gapS1} />
+                </div>
+              </div>
+            </div>
+            {/* Term 3 */}
+            <div className="rounded-xl border border-green-200 bg-green-50 dark:bg-green-900/10 p-5">
+              <h4 className="font-bold text-green-700 text-sm mb-4 text-center">{ar ? 'الفصل الثالث (ف3)' : 'Term 3'}</h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
+                  <span className="text-sm text-gray-600">{ar ? 'التكويني (من 10)' : 'Formative (/10)'}</span>
+                  <span className="font-bold text-lg text-primary-700">{schoolAvg.fs3Rate !== null ? `${schoolAvg.fs3Rate}%` : '—'}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
+                  <span className="text-sm text-gray-600">{ar ? 'الاختبار (من 25)' : 'Exam (/25)'}</span>
+                  <span className="font-bold text-lg text-blue-700">{schoolAvg.es3Rate !== null ? `${schoolAvg.es3Rate}%` : '—'}</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: schoolAvg.gapS3 === null ? '#f3f4f6' : Math.abs(schoolAvg.gapS3) <= 5 ? '#f0fdf4' : Math.abs(schoolAvg.gapS3) <= 15 ? '#fffbeb' : '#fef2f2' }}>
+                  <span className="text-sm font-semibold">{ar ? 'الفجوة (اختبار − تكويني)' : 'Gap (Exam − Formative)'}</span>
+                  <GapBadge gap={schoolAvg.gapS3} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Chart: school-wide S1 & S3 comparison */}
+          {(schoolAvg.fs1Rate !== null || schoolAvg.fs3Rate !== null) && (
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart
+                data={[
+                  { name: ar ? 'ف1 — تكويني' : 'T1 Formative', value: schoolAvg.fs1Rate, fill: '#1D5E3F' },
+                  { name: ar ? 'ف1 — اختبار' : 'T1 Exam', value: schoolAvg.es1Rate, fill: '#2563eb' },
+                  { name: ar ? 'ف3 — تكويني' : 'T3 Formative', value: schoolAvg.fs3Rate, fill: '#16a34a' },
+                  { name: ar ? 'ف3 — اختبار' : 'T3 Exam', value: schoolAvg.es3Rate, fill: '#0891b2' },
+                ]}
+                margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => `${v}%`} />
+                <ReferenceLine y={75} stroke="#dc2626" strokeDasharray="4 2" />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {[{ fill: '#1D5E3F' }, { fill: '#2563eb' }, { fill: '#16a34a' }, { fill: '#0891b2' }].map((c, i) => (
+                    <Cell key={i} fill={c.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           )}
         </div>
-      </div>
 
-      {/* ── Explanation ── */}
-      <div className="card bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700">
-        <h3 className="font-bold text-blue-700 dark:text-blue-300 mb-2">
-          {ar ? 'معيار 1.3 — تحليل الفجوة بين التقويم التكويني والاختبار الختامي' : 'Indicator 1.3 — Gap Analysis: Continuous Assessment vs Final Exam'}
-        </h3>
-        <p className="text-sm text-gray-700 dark:text-gray-300">
-          {ar
-            ? 'يقيس هذا المعيار الفجوة بين درجات التقويم التكويني (المستمر) ودرجات الاختبار النهائي لكل مادة. الفجوة الكبيرة تشير إلى عدم اتساق في قياس تحصيل الطالب، أو أن الطالب يؤدي جيداً في الأعمال المستمرة لكنه يعاني في الاختبارات (أو العكس).'
-            : 'This indicator measures the gap between continuous/formative assessment scores and final exam scores per subject. A large gap suggests inconsistency in measuring student achievement, or that students perform well in ongoing work but struggle in exams (or vice versa).'}
-        </p>
-        <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
-          <div className="bg-green-100 dark:bg-green-900/20 rounded p-2 text-center">
-            <div className="font-bold text-green-700">{ar ? 'فجوة ≤ 5' : 'Gap ≤ 5'}</div>
-            <div className="text-gray-500">{ar ? 'اتساق جيد' : 'Good consistency'}</div>
-          </div>
-          <div className="bg-yellow-100 dark:bg-yellow-900/20 rounded p-2 text-center">
-            <div className="font-bold text-yellow-700">{ar ? '5 < فجوة ≤ 15' : '5 < Gap ≤ 15'}</div>
-            <div className="text-gray-500">{ar ? 'فجوة متوسطة' : 'Moderate gap'}</div>
-          </div>
-          <div className="bg-red-100 dark:bg-red-900/20 rounded p-2 text-center">
-            <div className="font-bold text-red-700">{ar ? 'فجوة > 15' : 'Gap > 15'}</div>
-            <div className="text-gray-500">{ar ? 'فجوة كبيرة — تحتاج متابعة' : 'Large gap — needs review'}</div>
+        {/* ══════════════════════════════════════════════════════════
+            SECTION 2 — PER-SUBJECT: FORMATIVE VS EXAM
+        ══════════════════════════════════════════════════════════ */}
+        <div className="card print:shadow-none print:border print:break-before-page">
+          <SectionTitle num={2}
+            ar="تحليل الفجوة لكل مادة — الفصل الأول والثالث"
+            en="Per-Subject Gap Analysis — Term 1 & Term 3" />
+
+          <div className="space-y-6">
+            {subjectGaps.map((d, idx) => {
+              const color = SUBJECT_COLORS[idx % SUBJECT_COLORS.length]
+              const chartData = [
+                { name: ar ? 'تكويني ف1' : 'Form. T1', value: d.fs1Rate },
+                { name: ar ? 'اختبار ف1' : 'Exam T1', value: d.es1Rate },
+                { name: ar ? 'تكويني ف3' : 'Form. T3', value: d.fs3Rate },
+                { name: ar ? 'اختبار ف3' : 'Exam T3', value: d.es3Rate },
+              ]
+              return (
+                <div key={d.sc} className="border rounded-xl p-4" style={{ borderColor: color + '40', background: color + '06' }}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-3 h-3 rounded-full" style={{ background: color }} />
+                    <h4 className="font-bold text-sm" style={{ color }}>{d.label}</h4>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Term 1 */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-100">
+                      <p className="text-xs font-semibold text-gray-500 mb-2">{ar ? 'الفصل الأول (ف1)' : 'Term 1'}</p>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs text-gray-600">{ar ? 'التكويني' : 'Formative'}</span>
+                        <span className="font-mono text-sm font-bold text-primary-700">{d.fs1Rate !== null ? `${d.fs1Rate}%` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs text-gray-600">{ar ? 'الاختبار' : 'Exam'}</span>
+                        <span className="font-mono text-sm font-bold text-blue-700">{d.es1Rate !== null ? `${d.es1Rate}%` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t">
+                        <span className="text-xs font-semibold">{ar ? 'الفجوة' : 'Gap'}</span>
+                        <GapBadge gap={d.gapS1} />
+                      </div>
+                    </div>
+                    {/* Term 3 */}
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-100">
+                      <p className="text-xs font-semibold text-gray-500 mb-2">{ar ? 'الفصل الثالث (ف3)' : 'Term 3'}</p>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs text-gray-600">{ar ? 'التكويني' : 'Formative'}</span>
+                        <span className="font-mono text-sm font-bold text-primary-700">{d.fs3Rate !== null ? `${d.fs3Rate}%` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs text-gray-600">{ar ? 'الاختبار' : 'Exam'}</span>
+                        <span className="font-mono text-sm font-bold text-blue-700">{d.es3Rate !== null ? `${d.es3Rate}%` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t">
+                        <span className="text-xs font-semibold">{ar ? 'الفجوة' : 'Gap'}</span>
+                        <GapBadge gap={d.gapS3} />
+                      </div>
+                    </div>
+                  </div>
+                  <ResponsiveContainer width="100%" height={120} className="mt-3">
+                    <BarChart data={chartData} margin={{ top: 2, right: 10, left: -10, bottom: 2 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} />
+                      <Tooltip formatter={(v: number) => `${v}%`} />
+                      <ReferenceLine y={75} stroke="#dc2626" strokeDasharray="3 1" />
+                      <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                        {[{ fill: '#1D5E3F' }, { fill: '#2563eb' }, { fill: '#16a34a' }, { fill: '#0891b2' }].map((c, i) => (
+                          <Cell key={i} fill={c.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )
+            })}
           </div>
         </div>
-      </div>
 
-      {/* ── Comparison data (only if both uploaded) ── */}
-      {gapData.length > 0 && (
-        <>
-          {/* S3 Comparison Chart */}
-          {s3ChartData.length > 0 && (
-            <div className="card print:shadow-none print:border">
-              <SectionTitle num={1} ar="مقارنة التكويني مع الاختبار (الفصل الثالث)" en="Formative vs Exam Comparison (S3)" />
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={s3ChartData} margin={{ top: 5, right: 10, left: -10, bottom: 50 }}>
+        {/* ══════════════════════════════════════════════════════════
+            SECTION 3 — TERM 1 & 3 vs TERM 2 (CROSS-SEMESTER)
+        ══════════════════════════════════════════════════════════ */}
+        <div className="card print:shadow-none print:border print:break-before-page">
+          <SectionTitle num={3}
+            ar="مقارنة الفصل الثاني مع الفصلين الأول والثالث"
+            en="Term 2 vs Term 1 & Term 3 — Cross-Semester Gap" />
+
+          {/* School average row */}
+          <div className="mb-6">
+            <h4 className="text-sm font-bold text-gray-700 mb-3">{ar ? '📊 معدل المدرسة ككل' : '📊 School-Wide Average'}</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: ar ? 'ف1 (إجمالي%)' : 'T1 Total%', value: schoolAvg.s1Total, color: '#2563eb' },
+                { label: ar ? 'ف2 (تكويني%)' : 'T2 Formative%', value: schoolAvg.s2Rate, color: '#d97706' },
+                { label: ar ? 'ف3 (إجمالي%)' : 'T3 Total%', value: schoolAvg.s3Total, color: '#16a34a' },
+                { label: ar ? 'الفجوة المتقاطعة' : 'Cross Gap', value: schoolAvg.crossGap, color: schoolAvg.crossGap === null ? '#6b7280' : Math.abs(schoolAvg.crossGap) <= 5 ? '#16a34a' : Math.abs(schoolAvg.crossGap) <= 15 ? '#d97706' : '#dc2626', isGap: true },
+              ].map((item, i) => (
+                <div key={i} className="rounded-xl p-4 text-center border" style={{ borderColor: item.color + '40', background: item.color + '10' }}>
+                  <div className="text-xs text-gray-500 mb-1">{item.label}</div>
+                  <div className="text-xl font-bold" style={{ color: item.color }}>
+                    {item.value !== null ? (item.isGap ? (item.value > 0 ? `+${item.value}%` : `${item.value}%`) : `${item.value}%`) : '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Subject-by-subject cross-semester table */}
+          <div className="mb-6">
+            <h4 className="text-sm font-bold text-gray-700 mb-3">{ar ? '📚 تفصيل لكل مادة' : '📚 Per-Subject Breakdown'}</h4>
+            <div className="overflow-x-auto">
+              <table className="table-base">
+                <thead>
+                  <tr>
+                    <th className="text-start">{ar ? 'المادة' : 'Subject'}</th>
+                    <th className="text-center">{ar ? 'ف1 (إجمالي%)' : 'T1 Total%'}</th>
+                    <th className="text-center">{ar ? 'ف2 (تكويني%)' : 'T2 Form.%'}</th>
+                    <th className="text-center">{ar ? 'ف3 (إجمالي%)' : 'T3 Total%'}</th>
+                    <th className="text-center">{ar ? 'الفجوة' : 'Cross Gap'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subjectGaps.map(d => (
+                    <tr key={d.sc}>
+                      <td className="font-medium">{d.label}</td>
+                      <td className="text-center font-mono text-sm">{d.s1Total !== null ? `${d.s1Total}%` : '—'}</td>
+                      <td className="text-center font-mono text-sm">{d.s2Rate !== null ? `${d.s2Rate}%` : '—'}</td>
+                      <td className="text-center font-mono text-sm">{d.s3Total !== null ? `${d.s3Total}%` : '—'}</td>
+                      <td className="text-center"><GapBadge gap={d.crossGap} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Per-grade breakdown */}
+          {gradeData.length > 0 && (
+            <div>
+              <h4 className="text-sm font-bold text-gray-700 mb-3">{ar ? '🏫 تفصيل لكل صف دراسي' : '🏫 Per-Grade Breakdown'}</h4>
+              <div className="overflow-x-auto">
+                <table className="table-base">
+                  <thead>
+                    <tr>
+                      <th className="text-start">{ar ? 'الصف' : 'Grade'}</th>
+                      <th className="text-center">{ar ? 'ف1 (إجمالي%)' : 'T1 Total%'}</th>
+                      <th className="text-center">{ar ? 'ف2 (تكويني%)' : 'T2 Form.%'}</th>
+                      <th className="text-center">{ar ? 'ف3 (إجمالي%)' : 'T3 Total%'}</th>
+                      <th className="text-center">{ar ? 'الفجوة المتقاطعة' : 'Cross Gap'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gradeData.map(g => (
+                      <tr key={g.grade}>
+                        <td className="font-medium">{ar ? `الصف ${g.grade}` : `Grade ${g.grade}`}</td>
+                        <td className="text-center font-mono text-sm">{g.s1Total !== null ? `${g.s1Total}%` : '—'}</td>
+                        <td className="text-center font-mono text-sm">{g.s2Rate !== null ? `${g.s2Rate}%` : '—'}</td>
+                        <td className="text-center font-mono text-sm">{g.s3Total !== null ? `${g.s3Total}%` : '—'}</td>
+                        <td className="text-center"><GapBadge gap={g.crossGap} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <ResponsiveContainer width="100%" height={200} className="mt-4">
+                <BarChart
+                  data={gradeData.map(g => ({
+                    name: ar ? `ص${g.grade}` : `G${g.grade}`,
+                    [ar ? 'ف1' : 'T1']: g.s1Total,
+                    [ar ? 'ف2' : 'T2']: g.s2Rate,
+                    [ar ? 'ف3' : 'T3']: g.s3Total,
+                  }))}
+                  margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
-                  <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} />
-                  <Tooltip />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number) => `${v}%`} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="formative" name={ar ? 'التكويني (ف3)' : 'Formative (S3)'} fill="#1D5E3F" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="exam" name={ar ? 'الاختبار (ف3)' : 'Exam (S3)'} fill="#2563eb" radius={[3, 3, 0, 0]} />
+                  <ReferenceLine y={75} stroke="#dc2626" strokeDasharray="4 2" />
+                  <Bar dataKey={ar ? 'ف1' : 'T1'} fill="#2563eb" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey={ar ? 'ف2' : 'T2'} fill="#d97706" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey={ar ? 'ف3' : 'T3'} fill="#16a34a" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
-
-          {/* Detailed table */}
-          <div className="card print:shadow-none print:border overflow-x-auto">
-            <SectionTitle num={2} ar="جدول الفجوات التفصيلي" en="Detailed Gap Table" />
-            <table className="table-base">
-              <thead>
-                <tr>
-                  <th>{ar ? 'المادة' : 'Subject'}</th>
-                  <th>{ar ? 'تكويني ف1' : 'Formative S1'}</th>
-                  <th>{ar ? 'اختبار ف1' : 'Exam S1'}</th>
-                  <th>{ar ? 'فجوة ف1' : 'Gap S1'}</th>
-                  <th>{ar ? 'تكويني ف3' : 'Formative S3'}</th>
-                  <th>{ar ? 'اختبار ف3' : 'Exam S3'}</th>
-                  <th>{ar ? 'فجوة ف3' : 'Gap S3'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {gapData.map(d => (
-                  <tr key={d.sc}>
-                    <td className="font-medium">{d.label}</td>
-                    <td className="font-mono text-sm">{d.avgFS1 !== null ? d.avgFS1 : '—'}</td>
-                    <td className="font-mono text-sm">{d.avgES1 !== null ? d.avgES1 : '—'}</td>
-                    <td><GapBadge gap={d.gapS1} /></td>
-                    <td className="font-mono text-sm">{d.avgFS3 !== null ? d.avgFS3 : '—'}</td>
-                    <td className="font-mono text-sm">{d.avgES3 !== null ? d.avgES3 : '—'}</td>
-                    <td><GapBadge gap={d.gapS3} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {/* ── If only formative ── */}
-      {hasFormative && !hasExam && (
-        <div className="card text-center py-8 text-gray-500">
-          <p className="mb-3">{ar ? 'تم رفع بيانات التكويني. أضف درجات الاختبار لإظهار المقارنة.' : 'Formative data uploaded. Add exam scores to see the comparison.'}</p>
-          <button onClick={downloadExamTemplate} className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
-            <DownloadIcon size={14} />{ar ? 'تنزيل نموذج الاختبار' : 'Download Exam Template'}
-          </button>
         </div>
-      )}
-
-      {/* ── If only exam ── */}
-      {!hasFormative && hasExam && (
-        <div className="card text-center py-8 text-gray-500">
-          <p className="mb-3">{ar ? 'تم رفع درجات الاختبار. أضف بيانات التكويني لإظهار المقارنة.' : 'Exam scores uploaded. Add formative data to see the comparison.'}</p>
-          <button onClick={downloadFormativeTemplate} className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
-            <DownloadIcon size={14} />{ar ? 'تنزيل نموذج التكويني' : 'Download Formative Template'}
-          </button>
-        </div>
-      )}
+      </>}
     </div>
   )
 }
