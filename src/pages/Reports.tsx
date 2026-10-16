@@ -28,13 +28,14 @@ const SUBJECT_COLORS = [
 
 // ── Level colours ──────────────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
-  excellent: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-  very_good: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-  good:      'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
-  below:     'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  excellent:  'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+  very_good:  'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+  good:       'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
+  acceptable: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+  weak:       'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
 }
 const LEVEL_COLOR_HEX: Record<string, string> = {
-  excellent: '#16a34a', very_good: '#2563eb', good: '#ca8a04', below: '#dc2626',
+  excellent: '#16a34a', very_good: '#2563eb', good: '#ca8a04', acceptable: '#f59e0b', weak: '#dc2626',
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -128,9 +129,11 @@ function AchievementReport({ lang, filter }: { lang: Language; filter: AnalysisF
   }).length
   const schoolAbove75Rate = round2((schoolAbove75 / totalStudents) * 100)
 
-  let schoolLevel = 'below'
-  let schoolLevelAr = 'دون المستوى'
-  if (schoolAbove75Rate >= 70) { schoolLevel = 'excellent'; schoolLevelAr = 'ممتاز' }
+  const schoolPassRate = indicators.length ? round2(indicators.reduce((s, i) => s + i.passRate, 0) / indicators.length) : 0
+  let schoolLevel = 'acceptable'
+  let schoolLevelAr = 'مقبول'
+  if (schoolPassRate < 75) { schoolLevel = 'weak'; schoolLevelAr = 'ضعيف' }
+  else if (schoolAbove75Rate >= 70) { schoolLevel = 'excellent'; schoolLevelAr = 'ممتاز' }
   else if (schoolAbove75Rate >= 60) { schoolLevel = 'very_good'; schoolLevelAr = 'جيد جداً' }
   else if (schoolAbove75Rate >= 50) { schoolLevel = 'good'; schoolLevelAr = 'جيد' }
 
@@ -339,7 +342,7 @@ function AchievementReport({ lang, filter }: { lang: Language; filter: AnalysisF
                   </thead>
                   <tbody>
                     {gradeData.map(d => {
-                      let lvl = 'below', lvlAr = 'دون المستوى', lvlEn = 'Below Std'
+                      let lvl = 'acceptable', lvlAr = 'مقبول', lvlEn = 'Acceptable'
                       if (d.above75Rate >= 70) { lvl = 'excellent'; lvlAr = 'ممتاز'; lvlEn = 'Excellent' }
                       else if (d.above75Rate >= 60) { lvl = 'very_good'; lvlAr = 'جيد جداً'; lvlEn = 'Very Good' }
                       else if (d.above75Rate >= 50) { lvl = 'good'; lvlAr = 'جيد'; lvlEn = 'Good' }

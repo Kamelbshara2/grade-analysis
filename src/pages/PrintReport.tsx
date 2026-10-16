@@ -34,12 +34,14 @@ function levelColor(level: string) {
   if (level === 'excellent') return C.excellent
   if (level === 'very_good') return C.very_good
   if (level === 'good') return C.good
-  return C.below
+  if (level === 'acceptable') return '#f59e0b'
+  return '#ef4444'
 }
 function levelBg(level: string) {
   if (level === 'excellent') return 'bg-green-100 text-green-800 border-green-300'
   if (level === 'very_good') return 'bg-blue-100 text-blue-800 border-blue-300'
   if (level === 'good') return 'bg-amber-100 text-amber-800 border-amber-300'
+  if (level === 'acceptable') return 'bg-orange-100 text-orange-800 border-orange-300'
   return 'bg-red-100 text-red-800 border-red-300'
 }
 
@@ -50,11 +52,12 @@ function genNarrative11(indicators: AchievementIndicator[], semester: string): s
   const best = sorted[0]
   const worst = sorted[sorted.length - 1]
   const schoolAvg75 = round2(indicators.reduce((s, i) => s + i.above75Rate, 0) / indicators.length)
-  const schoolLevel = schoolAvg75 >= 70 ? 'ممتاز' : schoolAvg75 >= 60 ? 'جيد جداً' : schoolAvg75 >= 50 ? 'جيد' : 'دون المستوى'
+  const schoolPassRate = round2(indicators.reduce((s, i) => s + i.passRate, 0) / indicators.length)
+  const schoolLevel = schoolPassRate < 75 ? 'ضعيف' : schoolAvg75 >= 70 ? 'ممتاز' : schoolAvg75 >= 60 ? 'جيد جداً' : schoolAvg75 >= 50 ? 'جيد' : 'مقبول'
   const bestLabel = SUBJECT_LABELS[best.subjectCode]?.ar ?? best.subjectCode
   const worstLabel = SUBJECT_LABELS[worst.subjectCode]?.ar ?? worst.subjectCode
   const above = indicators.filter(i => i.level === 'excellent' || i.level === 'very_good').length
-  const below = indicators.filter(i => i.level === 'below').length
+  const below = indicators.filter(i => i.level === 'acceptable' || i.level === 'weak').length
   const semLabel = semester === 'annual' ? 'الدرجة السنوية' : `الفصل ${semester === '1' ? 'الأول' : semester === '2' ? 'الثاني' : 'الثالث'}`
 
   let text = `بناءً على تحليل بيانات ${semLabel}، بلغت نسبة الطلاب الحاصلين على 75% فأعلى على مستوى المدرسة ${schoolAvg75}%، مما يصنّف المدرسة في مستوى "${schoolLevel}". `
@@ -255,10 +258,12 @@ export default function PrintReport({ lang }: PrintReportProps) {
       avg,
       schoolLevel: (() => {
         const r75 = scores.length ? (above75 / scores.length) * 100 : 0
+        const pr = n ? (passCount / n) * 100 : 0
+        if (pr < 75) return { ar: 'ضعيف', en: 'Weak', level: 'weak' }
         if (r75 >= 70) return { ar: 'ممتاز', en: 'Excellent', level: 'excellent' }
         if (r75 >= 60) return { ar: 'جيد جداً', en: 'Very Good', level: 'very_good' }
         if (r75 >= 50) return { ar: 'جيد', en: 'Good', level: 'good' }
-        return { ar: 'دون المستوى', en: 'Below Standard', level: 'below' }
+        return { ar: 'مقبول', en: 'Acceptable', level: 'acceptable' }
       })(),
     }
   }, [records])
