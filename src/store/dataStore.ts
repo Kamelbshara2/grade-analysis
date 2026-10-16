@@ -103,6 +103,11 @@ export const dataStore = {
       uploadedAt: new Date().toISOString(),
     }
     saveData(_data)
+    fetch('/api/students', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, records }),
+    }).catch(e => console.warn('Neon sync students failed:', e))
   },
 
   importDiagnosticScores(yearId: string, scores: DiagnosticScore[]): void {
@@ -149,11 +154,15 @@ export const dataStore = {
     if (!_data.years[yearId]) {
       _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: [], termScores: scores, uploadedAt: new Date().toISOString() }
     } else {
-      // Replace scores for this semester, keep others
       const existing = (_data.years[yearId].termScores || []).filter(s => s.semester !== semester)
       _data.years[yearId].termScores = [...existing, ...scores]
     }
     saveData(_data)
+    fetch('/api/term-scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, semester, scores }),
+    }).catch(e => console.warn('Neon sync term-scores failed:', e))
   },
 
   mergeFormativeExam(
@@ -191,6 +200,11 @@ export const dataStore = {
     }
 
     saveData(_data)
+    fetch('/api/formative-exam', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, semester, formativeItems, examItems }),
+    }).catch(e => console.warn('Neon sync formative-exam failed:', e))
   },
 
   // ===== LEARNING OUTCOMES =====
