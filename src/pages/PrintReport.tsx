@@ -230,16 +230,20 @@ export default function PrintReport({ lang }: PrintReportProps) {
       ...formativeScores.map(s => s.subjectCode),
       ...examScores.map(s => s.subjectCode),
     ])] as SubjectCode[]
+    const avg = (arr: (number | null)[]) => {
+      const v = arr.filter(x => x !== null) as number[]
+      return v.length ? round2(v.reduce((a, b) => a + b, 0) / v.length) : null
+    }
     return codes.map(code => {
-      const fAvg = (arr: (number | null)[]) => {
-        const v = arr.filter(x => x !== null) as number[]
-        return v.length ? round2(v.reduce((a, b) => a + b, 0) / v.length) : null
-      }
-      const fs3 = fAvg(formativeScores.filter(s => s.subjectCode === code).map(s => s.s3))
-      const es3 = fAvg(examScores.filter(s => s.subjectCode === code).map(s => s.s3))
-      const gap = fs3 !== null && es3 !== null ? round2(fs3 - es3) : null
-      return { name: SUBJECT_LABELS[code]?.ar ?? code, formative: fs3, exam: es3, gap }
-    }).filter(r => r.formative !== null || r.exam !== null)
+      const fRecs = formativeScores.filter(s => s.subjectCode === code)
+      const eRecs = examScores.filter(s => s.subjectCode === code)
+      const fs1 = avg(fRecs.map(s => s.s1)), fs2 = avg(fRecs.map(s => s.s2 ?? null)), fs3 = avg(fRecs.map(s => s.s3))
+      const es1 = avg(eRecs.map(s => s.s1)), es2 = avg(eRecs.map(s => s.s2 ?? null)), es3 = avg(eRecs.map(s => s.s3))
+      const gap1 = fs1 !== null && es1 !== null ? round2(fs1 - es1) : null
+      const gap2 = fs2 !== null && es2 !== null ? round2(fs2 - es2) : null
+      const gap3 = fs3 !== null && es3 !== null ? round2(fs3 - es3) : null
+      return { name: SUBJECT_LABELS[code]?.ar ?? code, fs1, fs2, fs3, es1, es2, es3, gap1, gap2, gap3, formative: fs3, exam: es3, gap: gap3 }
+    }).filter(r => r.fs1 !== null || r.fs2 !== null || r.fs3 !== null || r.es1 !== null || r.es2 !== null || r.es3 !== null)
   }, [formativeScores, examScores])
 
   // Overview stats
@@ -452,13 +456,13 @@ export default function PrintReport({ lang }: PrintReportProps) {
               <p className="text-xs font-semibold text-gray-500 mb-3">{ar ? 'مخطط الشبكة — نسبة فوق 75% لكل مادة' : 'Radar — Above-75% per Subject'}</p>
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={indicators.map(i => ({
-                  subject: (SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode).slice(0, 6),
+                  subject: SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode,
                   value: i.above75Rate,
-                }))}>
+                }))} outerRadius={80}>
                   <PolarGrid />
-                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10 }} />
-                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} />
-                  <Radar dataKey="value" stroke={C.primary} fill={C.primary} fillOpacity={0.25} />
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
+                  <PolarRadiusAxis angle={90} domain={[0, Math.max(20, ...indicators.map(i => i.above75Rate))]} tick={{ fontSize: 8 }} />
+                  <Radar dataKey="value" stroke={C.primary} fill={C.primary} fillOpacity={0.4} />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
@@ -557,64 +561,75 @@ export default function PrintReport({ lang }: PrintReportProps) {
             <Section num={3} title={ar ? 'المؤشر 1.2 — الاتجاهات عبر السنوات' : 'Indicator 1.2 — Multi-Year Trends'}
               subtitle={ar ? 'تطور متوسطات المواد عبر السنوات الدراسية' : 'Subject average progression over academic years'}>
 
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={multiYearData.chartRows} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="year" tick={{ fontSize: 11 }} />
-                  <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v: number) => `${v}%`} />
-                  <Legend />
-                  <ReferenceLine y={75} stroke={C.below} strokeDasharray="4 2" label={{ value: '75%', position: 'right', fontSize: 10 }} />
-                  {multiYearData.allCodes.map((code, i) => (
-                    <Line key={code} type="monotone" dataKey={code}
-                      name={SUBJECT_LABELS[code]?.ar ?? code}
-                      stroke={C.subjects[i % C.subjects.length]}
-                      strokeWidth={2} dot={{ r: 4 }} connectNulls />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-
-              {/* Year-over-year table */}
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr style={{ background: C.primary + '15' }}>
-                      <th className="border px-3 py-2 text-start" style={{ color: C.primary }}>{ar ? 'المادة' : 'Subject'}</th>
-                      {years.map(y => <th key={y} className="border px-3 py-2 text-center">{y}</th>)}
-                      <th className="border px-3 py-2 text-center">{ar ? 'التغيير الكلي' : 'Total Change'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {multiYearData.allCodes.map((code, idx) => {
-                      const avgs = multiYearData.subjectAvgs[code] ?? []
-                      const validAvgs = avgs.filter(v => !isNaN(v))
-                      const totalDiff = validAvgs.length >= 2 ? round2(validAvgs[validAvgs.length - 1] - validAvgs[0]) : null
-                      return (
-                        <tr key={code} style={{ background: idx % 2 === 0 ? 'white' : '#f9fafb' }}>
-                          <td className="border px-3 py-2 font-semibold">{SUBJECT_LABELS[code]?.ar ?? code}</td>
-                          {avgs.map((v, i) => (
-                            <td key={i} className="border px-3 py-2 text-center">
-                              {isNaN(v) ? '—' : (
-                                <span className={clsx('font-semibold', v >= 75 ? 'text-green-700' : v >= 50 ? 'text-amber-700' : 'text-red-700')}>
-                                  {v}
-                                </span>
-                              )}
-                            </td>
-                          ))}
-                          <td className="border px-3 py-2 text-center font-bold">
-                            {totalDiff !== null ? (
-                              <span style={{ color: totalDiff >= 0 ? C.excellent : C.below }}>
-                                {totalDiff > 0 ? `▲ +${totalDiff}` : `▼ ${totalDiff}`}
-                              </span>
-                            ) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+              {/* School-wide average trend */}
+              <div className="mb-6">
+                <p className="text-xs font-semibold text-gray-600 mb-2">{ar ? '📊 المؤشر الكلي للمدرسة — متوسط جميع المواد' : '📊 Overall School Indicator — All Subjects Average'}</p>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart
+                    data={multiYearData.chartRows.map(row => ({
+                      year: row.year,
+                      avg: round2(
+                        multiYearData.allCodes
+                          .map(c => row[c] as number)
+                          .filter(v => !isNaN(v) && v > 0)
+                          .reduce((a, b, _, arr) => a + b / arr.length, 0)
+                      ),
+                    }))}
+                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" tick={{ fontSize: 11 }} />
+                    <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v: number) => `${v}%`} />
+                    <ReferenceLine y={75} stroke={C.below} strokeDasharray="4 2" label={{ value: '75%', position: 'right', fontSize: 10 }} />
+                    <Line type="monotone" dataKey="avg" name={ar ? 'متوسط المدرسة' : 'School Avg'} stroke={C.primary} strokeWidth={3} dot={{ r: 5 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
 
+              {/* Per-subject trend sections */}
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-gray-600 mb-3">{ar ? '📚 تقدم كل مادة عبر السنوات' : '📚 Per-Subject Progress'}</p>
+                <div className="grid grid-cols-2 gap-4">
+                  {multiYearData.allCodes.map((code, idx) => {
+                    const avgs = multiYearData.subjectAvgs[code] ?? []
+                    const validAvgs = avgs.filter(v => !isNaN(v))
+                    const totalDiff = validAvgs.length >= 2 ? round2(validAvgs[validAvgs.length - 1] - validAvgs[0]) : null
+                    const subjectRows = multiYearData.chartRows.map(row => ({ year: row.year as string, val: isNaN(row[code] as number) ? null : row[code] as number }))
+                    return (
+                      <div key={code} className="border rounded-lg p-3" style={{ borderColor: C.subjects[idx % C.subjects.length] + '60' }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold" style={{ color: C.subjects[idx % C.subjects.length] }}>
+                            {ar ? SUBJECT_LABELS[code]?.ar ?? code : SUBJECT_LABELS[code]?.en ?? code}
+                          </span>
+                          {totalDiff !== null && (
+                            <span className="text-xs font-bold" style={{ color: totalDiff >= 0 ? C.excellent : C.below }}>
+                              {totalDiff > 0 ? `▲ +${totalDiff}` : `▼ ${totalDiff}`}
+                            </span>
+                          )}
+                        </div>
+                        <ResponsiveContainer width="100%" height={80}>
+                          <LineChart data={subjectRows} margin={{ top: 2, right: 8, left: -20, bottom: 2 }}>
+                            <XAxis dataKey="year" tick={{ fontSize: 8 }} />
+                            <YAxis domain={[40, 100]} tick={{ fontSize: 7 }} />
+                            <ReferenceLine y={75} stroke={C.below} strokeDasharray="3 1" />
+                            <Line type="monotone" dataKey="val" stroke={C.subjects[idx % C.subjects.length]} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                            <Tooltip formatter={(v: number) => `${v}%`} contentStyle={{ fontSize: 10 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                        <div className="flex justify-between mt-1 text-xs text-gray-500">
+                          {avgs.map((v, i) => (
+                            <span key={i} className={clsx('font-mono', isNaN(v) ? 'text-gray-300' : v >= 75 ? 'text-green-700' : v >= 50 ? 'text-amber-700' : 'text-red-700')}>
+                              {isNaN(v) ? '—' : v}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Narrative analysis */}
               <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: `4px solid ${C.very_good}` }}>
                 <p className="font-semibold text-xs text-gray-500 mb-1">{ar ? '📝 التحليل الوصفي' : '📝 Descriptive Analysis'}</p>
                 <p>{genNarrative12(years, multiYearData.subjectAvgs as Record<SubjectCode, number[]>)}</p>
@@ -670,29 +685,32 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   <thead>
                     <tr style={{ background: C.primary + '15' }}>
                       <th className="border px-3 py-2 text-start">{ar ? 'المادة' : 'Subject'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'التكويني (ف3)' : 'Formative (S3)'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'الاختبار (ف3)' : 'Exam (S3)'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'الفجوة' : 'Gap'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'التفسير' : 'Interpretation'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'تكويني ف1' : 'Form.S1'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'اختبار ف1' : 'Exam S1'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'فجوة ف1' : 'Gap S1'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'تكويني ف2' : 'Form.S2'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'اختبار ف2' : 'Exam S2'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'فجوة ف2' : 'Gap S2'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'تكويني ف3' : 'Form.S3'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'اختبار ف3' : 'Exam S3'}</th>
+                      <th className="border px-2 py-2 text-center">{ar ? 'فجوة ف3' : 'Gap S3'}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {gapRows.map((r, i) => {
-                      const absGap = Math.abs(r.gap ?? 0)
-                      const interp = r.gap === null ? '—'
-                        : absGap <= 5 ? (ar ? '✅ فجوة صغيرة' : '✅ Small gap')
-                        : absGap <= 15 ? (ar ? '⚠️ فجوة متوسطة' : '⚠️ Moderate gap')
-                        : (ar ? '🔴 فجوة كبيرة' : '🔴 Large gap')
+                      const fmtGap = (g: number | null) => g === null ? '—' : <span style={{ color: g >= 0 ? C.very_good : C.below }}>{g > 0 ? `+${g}` : g}</span>
                       return (
                         <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
                           <td className="border px-3 py-2 font-semibold">{r.name}</td>
-                          <td className="border px-2 py-2 text-center">{r.formative ?? '—'}</td>
-                          <td className="border px-2 py-2 text-center">{r.exam ?? '—'}</td>
-                          <td className="border px-2 py-2 text-center font-bold"
-                            style={{ color: r.gap === null ? undefined : r.gap >= 0 ? C.very_good : C.below }}>
-                            {r.gap !== null ? (r.gap >= 0 ? `+${r.gap}` : `${r.gap}`) : '—'}
-                          </td>
-                          <td className="border px-2 py-2 text-center text-gray-600">{interp}</td>
+                          <td className="border px-2 py-2 text-center">{r.fs1 ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center">{r.es1 ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center font-bold">{fmtGap(r.gap1)}</td>
+                          <td className="border px-2 py-2 text-center">{r.fs2 ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center">{r.es2 ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center font-bold">{fmtGap(r.gap2)}</td>
+                          <td className="border px-2 py-2 text-center">{r.fs3 ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center">{r.es3 ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center font-bold">{fmtGap(r.gap3)}</td>
                         </tr>
                       )
                     })}

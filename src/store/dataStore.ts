@@ -1,4 +1,4 @@
-import type { AppData, YearData, StudentRecord, DiagnosticScore, LearningOutcome, OutcomeScore, FormativeScore, ExamScore, TermScore } from '@/types'
+import type { AppData, YearData, StudentRecord, DiagnosticScore, LearningOutcome, OutcomeScore, FormativeScore, ExamScore, TermScore, SubjectCode } from '@/types'
 
 const STORAGE_KEY = 'grade_analysis_v1'
 const API_LOADED_KEY = 'grade_analysis_api_loaded'
@@ -153,6 +153,43 @@ export const dataStore = {
       const existing = (_data.years[yearId].termScores || []).filter(s => s.semester !== semester)
       _data.years[yearId].termScores = [...existing, ...scores]
     }
+    saveData(_data)
+  },
+
+  mergeFormativeExam(
+    yearId: string,
+    semester: 1 | 2 | 3,
+    formativeItems: Array<{ studentId: string; subjectCode: SubjectCode; grade: number; section: string; score: number | null }>,
+    examItems: Array<{ studentId: string; subjectCode: SubjectCode; grade: number; section: string; score: number | null }>,
+  ): void {
+    if (!_data.years[yearId]) {
+      _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: [], termScores: [], uploadedAt: new Date().toISOString() }
+    }
+
+    const semKey = `s${semester}` as 's1' | 's2' | 's3'
+
+    // Merge formative scores
+    const fScores = _data.years[yearId].formativeScores
+    for (const item of formativeItems) {
+      const existing = fScores.find(f => f.studentId === item.studentId && f.subjectCode === item.subjectCode)
+      if (existing) {
+        existing[semKey] = item.score
+      } else {
+        fScores.push({ studentId: item.studentId, yearId, subjectCode: item.subjectCode, grade: item.grade, section: item.section, s1: null, s2: null, s3: null, [semKey]: item.score })
+      }
+    }
+
+    // Merge exam scores
+    const eScores = _data.years[yearId].examScores
+    for (const item of examItems) {
+      const existing = eScores.find(e => e.studentId === item.studentId && e.subjectCode === item.subjectCode)
+      if (existing) {
+        existing[semKey] = item.score
+      } else {
+        eScores.push({ studentId: item.studentId, yearId, subjectCode: item.subjectCode, grade: item.grade, section: item.section, s1: null, s2: null, s3: null, [semKey]: item.score })
+      }
+    }
+
     saveData(_data)
   },
 

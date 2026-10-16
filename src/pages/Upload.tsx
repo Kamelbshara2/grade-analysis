@@ -5,7 +5,7 @@ import type { Language } from '@/types'
 import { parseAnnualGradeFile, parseNationalityFile, parseStudentRosterFile } from '@/utils/excelParser'
 import { parseDiagnosticFile } from '@/utils/diagnosticParser'
 import { parseFormativeFile, parseExamFile } from '@/utils/formativeParser'
-import { parseTermFile, parseNoorTermFile, isNoorTermFile } from '@/utils/termParser'
+import { parseTermFile, parseNoorTermFile, isNoorTermFile, parseNoorFormativeExam } from '@/utils/termParser'
 import { dataStore } from '@/store/dataStore'
 import type { UploadResult } from '@/types'
 import { downloadAnnualTemplate, downloadDiagnosticTemplate, downloadNationalityTemplate, downloadFormativeTemplate, downloadExamTemplate, downloadTermTemplate } from '@/utils/templateGenerator'
@@ -115,6 +115,10 @@ export default function Upload({ lang }: UploadProps) {
           : parseTermFile(buffer, yearId.trim(), termSemester)
         const sem = useNoor ? (scores[0]?.semester ?? termSemester) : termSemester
         dataStore.importTermScores(yearId.trim(), sem, scores)
+        if (useNoor) {
+          const { semester: noorSem, formative, exam } = parseNoorFormativeExam(buffer, yearId.trim())
+          dataStore.mergeFormativeExam(yearId.trim(), noorSem, formative, exam)
+        }
         const subjects = [...new Set(scores.map(s => s.subjectCode))]
         setState({
           status: 'success',
