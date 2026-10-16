@@ -156,8 +156,6 @@ export default function PrintReport({ lang }: PrintReportProps) {
   const termScoresT1 = useMemo(() => dataStore.getTermScores(yearId, 1), [yearId])
   const termScoresT2 = useMemo(() => dataStore.getTermScores(yearId, 2), [yearId])
   const termScoresT3 = useMemo(() => dataStore.getTermScores(yearId, 3), [yearId])
-  const formativeScores = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
-  const examScores = useMemo(() => dataStore.getExamScores(yearId), [yearId])
 
   const semesterVal = semester === 'annual' ? 'annual' : (Number(semester) as 1 | 2 | 3)
 
@@ -224,83 +222,6 @@ export default function PrintReport({ lang }: PrintReportProps) {
     })).filter(r => r.diagnostic !== null || r.t1 !== null)
   }, [diagScores, termScoresT1, termScoresT2, termScoresT3])
 
-  // Formative / exam gap — redesigned UAE NOOR scoring structure
-  // S1: formative (out of 10) + exam (out of 25) = 35%
-  // S2: teacher assessment only (out of 30) = 30%
-  // S3: formative (out of 10) + exam (out of 25) = 35%
-  const gapRows = useMemo(() => {
-    const codes = [...new Set([
-      ...formativeScores.map(s => s.subjectCode),
-      ...examScores.map(s => s.subjectCode),
-    ])] as SubjectCode[]
-
-    const avg = (arr: (number | null)[]) => {
-      const v = arr.filter((x): x is number => x !== null)
-      return v.length ? round2(v.reduce((a, b) => a + b, 0) / v.length) : null
-    }
-
-    return codes.map(code => {
-      const fRecs = formativeScores.filter(s => s.subjectCode === code)
-      const eRecs = examScores.filter(s => s.subjectCode === code)
-
-      const fs1 = avg(fRecs.map(s => s.s1))          // formative S1 (out of 10)
-      const es1 = avg(eRecs.map(s => s.s1))          // exam S1 (out of 25)
-      const fs2 = avg(fRecs.map(s => s.s2 ?? null))  // teacher assessment S2 (out of 30)
-      const fs3 = avg(fRecs.map(s => s.s3))          // formative S3 (out of 10)
-      const es3 = avg(eRecs.map(s => s.s3))          // exam S3 (out of 25)
-
-      // Rates as percentages
-      const fs1Rate = fs1 !== null ? round2(fs1 / 10 * 100) : null
-      const es1Rate = es1 !== null ? round2(es1 / 25 * 100) : null
-      const internalGap1 = fs1Rate !== null && es1Rate !== null ? round2(es1Rate - fs1Rate) : null
-
-      const s2Rate = fs2 !== null ? round2(fs2 / 30 * 100) : null
-
-      const fs3Rate = fs3 !== null ? round2(fs3 / 10 * 100) : null
-      const es3Rate = es3 !== null ? round2(es3 / 25 * 100) : null
-      const internalGap3 = fs3Rate !== null && es3Rate !== null ? round2(es3Rate - fs3Rate) : null
-
-      // Cross-semester gap: s2Rate vs average of s1 total rate and s3 total rate
-      const s1TotalRate = (fs1 !== null && es1 !== null) ? round2((fs1 + es1) / 35 * 100) : null
-      const s3TotalRate = (fs3 !== null && es3 !== null) ? round2((fs3 + es3) / 35 * 100) : null
-
-      let crossGap: number | null = null
-      if (s2Rate !== null && s1TotalRate !== null && s3TotalRate !== null) {
-        crossGap = round2(s2Rate - (s1TotalRate + s3TotalRate) / 2)
-      } else if (s2Rate !== null && s1TotalRate !== null) {
-        crossGap = round2(s2Rate - s1TotalRate)
-      } else if (s2Rate !== null && s3TotalRate !== null) {
-        crossGap = round2(s2Rate - s3TotalRate)
-      }
-
-      // Arabic interpretation
-      let interp = ''
-      if (crossGap !== null) {
-        if (crossGap > 10) interp = 'الفصل الثاني أعلى بشكل لافت'
-        else if (crossGap > 0) interp = 'أداء مستقر'
-        else if (crossGap > -10) interp = 'تراجع طفيف'
-        else interp = 'تراجع ملحوظ في الاختبارات'
-      } else {
-        const internalGap = internalGap1 ?? internalGap3
-        if (internalGap !== null) {
-          if (internalGap > 10) interp = 'أداء أفضل في الاختبارات'
-          else if (internalGap < -10) interp = 'أداء أضعف في الاختبارات'
-          else interp = 'متوازن'
-        }
-      }
-
-      return {
-        subject: SUBJECT_LABELS[code]?.ar ?? code,
-        fs1, es1, fs1Rate, es1Rate, internalGap1,
-        fs2, s2Rate,
-        fs3, es3, fs3Rate, es3Rate, internalGap3,
-        s1TotalRate, s3TotalRate,
-        crossGap, interp,
-      }
-    }).filter(r =>
-      r.fs1 !== null || r.es1 !== null || r.fs2 !== null || r.fs3 !== null || r.es3 !== null
-    )
-  }, [formativeScores, examScores])
 
   // Overview stats
   const totals = useMemo(() => {
@@ -642,48 +563,54 @@ export default function PrintReport({ lang }: PrintReportProps) {
                 </ResponsiveContainer>
               </div>
 
-              {/* Per-subject trend sections */}
-              <div className="mt-4">
-                <p className="text-xs font-semibold text-gray-600 mb-3">{ar ? '📚 تقدم كل مادة عبر السنوات' : '📚 Per-Subject Progress'}</p>
-                <div className="grid grid-cols-2 gap-4">
-                  {multiYearData.allCodes.map((code, idx) => {
-                    const avgs = multiYearData.subjectAvgs[code] ?? []
-                    const validAvgs = avgs.filter(v => !isNaN(v))
-                    const totalDiff = validAvgs.length >= 2 ? round2(validAvgs[validAvgs.length - 1] - validAvgs[0]) : null
-                    const subjectRows = multiYearData.chartRows.map(row => ({ year: row.year as string, val: isNaN(row[code] as number) ? null : row[code] as number }))
-                    return (
-                      <div key={code} className="border rounded-lg p-3" style={{ borderColor: C.subjects[idx % C.subjects.length] + '60' }}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold" style={{ color: C.subjects[idx % C.subjects.length] }}>
-                            {ar ? SUBJECT_LABELS[code]?.ar ?? code : SUBJECT_LABELS[code]?.en ?? code}
+              {/* Per-subject trend sections — one full-width page per subject */}
+              {multiYearData.allCodes.map((code, idx) => {
+                const avgs = multiYearData.subjectAvgs[code] ?? []
+                const validAvgs = avgs.filter(v => !isNaN(v))
+                const totalDiff = validAvgs.length >= 2 ? round2(validAvgs[validAvgs.length - 1] - validAvgs[0]) : null
+                const subjectRows = multiYearData.chartRows.map(row => ({ year: row.year as string, val: isNaN(row[code] as number) ? null : row[code] as number }))
+                const subjectColor = C.subjects[idx % C.subjects.length]
+                return (
+                  <div key={code}>
+                    <div className="print-break" />
+                    <div className="border rounded-xl p-5 mt-4" style={{ borderColor: subjectColor + '50', background: subjectColor + '06' }}>
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-base font-bold" style={{ color: subjectColor }}>
+                          {ar ? SUBJECT_LABELS[code]?.ar ?? code : SUBJECT_LABELS[code]?.en ?? code}
+                        </h4>
+                        {totalDiff !== null && (
+                          <span className="text-sm font-bold px-3 py-1 rounded-full" style={{
+                            background: totalDiff >= 0 ? '#f0fdf4' : '#fef2f2',
+                            color: totalDiff >= 0 ? C.excellent : C.below,
+                          }}>
+                            {totalDiff > 0 ? `▲ +${totalDiff}%` : `▼ ${totalDiff}%`}
                           </span>
-                          {totalDiff !== null && (
-                            <span className="text-xs font-bold" style={{ color: totalDiff >= 0 ? C.excellent : C.below }}>
-                              {totalDiff > 0 ? `▲ +${totalDiff}` : `▼ ${totalDiff}`}
-                            </span>
-                          )}
-                        </div>
-                        <ResponsiveContainer width="100%" height={80}>
-                          <LineChart data={subjectRows} margin={{ top: 2, right: 8, left: -20, bottom: 2 }}>
-                            <XAxis dataKey="year" tick={{ fontSize: 8 }} />
-                            <YAxis domain={[40, 100]} tick={{ fontSize: 7 }} />
-                            <ReferenceLine y={75} stroke={C.below} strokeDasharray="3 1" />
-                            <Line type="monotone" dataKey="val" stroke={C.subjects[idx % C.subjects.length]} strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                            <Tooltip formatter={(v: number) => `${v}%`} contentStyle={{ fontSize: 10 }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                        <div className="flex justify-between mt-1 text-xs text-gray-500">
-                          {avgs.map((v, i) => (
-                            <span key={i} className={clsx('font-mono', isNaN(v) ? 'text-gray-300' : v >= 75 ? 'text-green-700' : v >= 50 ? 'text-amber-700' : 'text-red-700')}>
-                              {isNaN(v) ? '—' : v}
-                            </span>
-                          ))}
-                        </div>
+                        )}
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={subjectRows} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="year" tick={{ fontSize: 11 }} />
+                          <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(v: number) => `${v}%`} />
+                          <ReferenceLine y={75} stroke={C.below} strokeDasharray="4 2" label={{ value: '75%', position: 'right', fontSize: 10 }} />
+                          <Line type="monotone" dataKey="val" name={ar ? SUBJECT_LABELS[code]?.ar ?? code : SUBJECT_LABELS[code]?.en ?? code} stroke={subjectColor} strokeWidth={3} dot={{ r: 5 }} connectNulls />
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <div className="flex gap-6 mt-3 flex-wrap">
+                        {multiYearData.chartRows.map((row, i) => (
+                          <div key={i} className="text-center">
+                            <div className="text-xs text-gray-500">{row.year as string}</div>
+                            <div className={clsx('text-sm font-bold', isNaN(avgs[i]) ? 'text-gray-300' : avgs[i] >= 75 ? 'text-green-700' : avgs[i] >= 50 ? 'text-amber-700' : 'text-red-700')}>
+                              {isNaN(avgs[i]) ? '—' : `${avgs[i]}%`}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
 
               {/* Narrative analysis */}
               <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: `4px solid ${C.very_good}` }}>
@@ -694,177 +621,11 @@ export default function PrintReport({ lang }: PrintReportProps) {
           </>
         )}
 
-        {/* ── SECTION 4: FORMATIVE / EXAM GAP (if data) ─────────── */}
-        {gapRows.length > 0 && (
-          <>
-            <div className="print-break" />
-            <Section num={multiYearData && years.length >= 2 ? 4 : 3}
-              title={ar ? 'المؤشر 1.3 — تحليل الفجوة التقييمية' : 'Indicator 1.3 — Assessment Gap Analysis'}
-              subtitle={ar ? 'مقارنة التكويني والاختبار داخل الفصل، ومقارنة الفصل الثاني بالأول والثالث' : 'Internal formative/exam gap and cross-semester comparison'}>
-
-              {/* Internal gap chart for S1 and S3 */}
-              {gapRows.some(r => r.internalGap1 !== null || r.internalGap3 !== null) && (
-                <div className="mb-6">
-                  <p className="text-xs font-semibold text-gray-500 mb-3">
-                    {ar ? 'الفجوة الداخلية: اختبار − تكويني (%) — الفصل الأول والثالث' : 'Internal Gap: Exam − Formative (%) — S1 & S3'}
-                  </p>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart
-                      data={gapRows.map(r => ({
-                        name: r.subject.slice(0, 10),
-                        'ف1': r.internalGap1,
-                        'ف3': r.internalGap3,
-                      }))}
-                      margin={{ top: 5, right: 20, left: 0, bottom: 40 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} interval={0} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip formatter={(v: number) => `${v > 0 ? '+' : ''}${v}%`} />
-                      <Legend />
-                      <ReferenceLine y={0} stroke="#374151" />
-                      <Bar dataKey="ف1" name={ar ? 'فجوة ف1' : 'Gap S1'} fill={C.very_good} radius={[3, 3, 0, 0]}>
-                        {gapRows.map((r, i) => (
-                          <Cell key={i} fill={
-                            r.internalGap1 === null ? '#e5e7eb' :
-                            r.internalGap1 > 5 ? C.excellent :
-                            r.internalGap1 < -5 ? C.below : '#d97706'
-                          } />
-                        ))}
-                      </Bar>
-                      <Bar dataKey="ف3" name={ar ? 'فجوة ف3' : 'Gap S3'} fill="#7c3aed" radius={[3, 3, 0, 0]}>
-                        {gapRows.map((r, i) => (
-                          <Cell key={i} fill={
-                            r.internalGap3 === null ? '#e5e7eb' :
-                            r.internalGap3 > 5 ? C.excellent :
-                            r.internalGap3 < -5 ? C.below : '#d97706'
-                          } />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-              {/* Section A: Internal gap S1 & S3 */}
-              <div className="mb-6">
-                <p className="text-sm font-bold mb-2" style={{ color: C.primary }}>
-                  {ar ? 'أ — مقارنة التكويني والاختبار (الفصل الأول والثالث)' : 'A — Formative vs Exam (S1 & S3)'}
-                </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse">
-                    <thead>
-                      <tr style={{ background: C.primary + '15' }}>
-                        <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>{ar ? 'المادة' : 'Subject'}</th>
-                        <th className="border px-2 py-2 text-center">{ar ? 'تكويني ف1 (10)' : 'Form.S1 (10)'}</th>
-                        <th className="border px-2 py-2 text-center">{ar ? 'اختبار ف1 (25)' : 'Exam S1 (25)'}</th>
-                        <th className="border px-2 py-2 text-center font-bold">{ar ? 'الفجوة ف1' : 'Gap S1'}</th>
-                        <th className="border px-2 py-2 text-center">{ar ? 'تكويني ف3 (10)' : 'Form.S3 (10)'}</th>
-                        <th className="border px-2 py-2 text-center">{ar ? 'اختبار ف3 (25)' : 'Exam S3 (25)'}</th>
-                        <th className="border px-2 py-2 text-center font-bold">{ar ? 'الفجوة ف3' : 'Gap S3'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {gapRows.map((r, i) => {
-                        const gapCell = (gap: number | null) => {
-                          if (gap === null) return <span className="text-gray-300">—</span>
-                          const bg = gap > 5 ? '#f0fdf4' : gap < -5 ? '#fef2f2' : '#fffbeb'
-                          const color = gap > 5 ? C.excellent : gap < -5 ? C.below : '#d97706'
-                          return (
-                            <span className="px-2 py-0.5 rounded font-bold text-xs" style={{ background: bg, color }}>
-                              {gap > 0 ? `+${gap}` : gap}%
-                            </span>
-                          )
-                        }
-                        return (
-                          <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
-                            <td className="border px-3 py-2 font-semibold text-gray-800">{r.subject}</td>
-                            <td className="border px-2 py-2 text-center">{r.fs1 !== null ? `${r.fs1} (${r.fs1Rate}%)` : '—'}</td>
-                            <td className="border px-2 py-2 text-center">{r.es1 !== null ? `${r.es1} (${r.es1Rate}%)` : '—'}</td>
-                            <td className="border px-2 py-2 text-center">{gapCell(r.internalGap1)}</td>
-                            <td className="border px-2 py-2 text-center">{r.fs3 !== null ? `${r.fs3} (${r.fs3Rate}%)` : '—'}</td>
-                            <td className="border px-2 py-2 text-center">{r.es3 !== null ? `${r.es3} (${r.es3Rate}%)` : '—'}</td>
-                            <td className="border px-2 py-2 text-center">{gapCell(r.internalGap3)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Section B: Cross-semester S2 vs S1/S3 */}
-              {gapRows.some(r => r.fs2 !== null || r.crossGap !== null) && (
-                <div className="mb-4">
-                  <p className="text-sm font-bold mb-2" style={{ color: C.primary }}>
-                    {ar ? 'ب — مقارنة التقييم المستمر للفصل الثاني مع الفصلين الأول والثالث' : 'B — S2 Continuous Assessment vs S1 & S3'}
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr style={{ background: C.primary + '15' }}>
-                          <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>{ar ? 'المادة' : 'Subject'}</th>
-                          <th className="border px-2 py-2 text-center">{ar ? 'ف1 (35%)' : 'S1 (35%)'}</th>
-                          <th className="border px-2 py-2 text-center">{ar ? 'تكويني ف2 (30%)' : 'Form.S2 (30%)'}</th>
-                          <th className="border px-2 py-2 text-center">{ar ? 'ف3 (35%)' : 'S3 (35%)'}</th>
-                          <th className="border px-2 py-2 text-center font-bold">{ar ? 'الفجوة المتقاطعة' : 'Cross Gap'}</th>
-                          <th className="border px-2 py-2 text-start">{ar ? 'التفسير' : 'Interpretation'}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {gapRows.map((r, i) => {
-                          const crossCell = (gap: number | null) => {
-                            if (gap === null) return <span className="text-gray-300">—</span>
-                            const bg = gap > 5 ? '#f0fdf4' : gap < -5 ? '#fef2f2' : '#fffbeb'
-                            const color = gap > 5 ? C.excellent : gap < -5 ? C.below : '#d97706'
-                            return (
-                              <span className="px-2 py-0.5 rounded font-bold text-xs" style={{ background: bg, color }}>
-                                {gap > 0 ? `+${gap}` : gap}%
-                              </span>
-                            )
-                          }
-                          return (
-                            <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
-                              <td className="border px-3 py-2 font-semibold text-gray-800">{r.subject}</td>
-                              <td className="border px-2 py-2 text-center">
-                                {r.s1TotalRate !== null ? `${r.s1TotalRate}%` : '—'}
-                              </td>
-                              <td className="border px-2 py-2 text-center">
-                                {r.fs2 !== null ? `${r.fs2} (${r.s2Rate}%)` : '—'}
-                              </td>
-                              <td className="border px-2 py-2 text-center">
-                                {r.s3TotalRate !== null ? `${r.s3TotalRate}%` : '—'}
-                              </td>
-                              <td className="border px-2 py-2 text-center">{crossCell(r.crossGap)}</td>
-                              <td className="border px-2 py-1.5 text-xs text-gray-700">
-                                {r.interp || '—'}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <div className="p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#f5f3ff', borderRight: `4px solid #7c3aed` }}>
-                <p className="font-semibold text-xs text-gray-500 mb-1">{ar ? '📝 التحليل الوصفي' : '📝 Descriptive Analysis'}</p>
-                <p>
-                  {ar
-                    ? `القسم (أ) يقارن التقويم التكويني (من 10) بالاختبار (من 25) داخل الفصل الأول والثالث بعد تحويلهما إلى نسب مئوية. فجوة إيجابية تعني أداء أفضل في الاختبار. القسم (ب) يقارن التقييم المستمر للفصل الثاني (من 30) بمتوسط مجموع درجات الفصلين الأول والثالث؛ الفجوة المقبولة ≤5 نقاط مئوية.`
-                    : `Section A compares formative (out of 10) vs exam (out of 25) within S1 and S3 as percentages. A positive gap means better exam performance. Section B compares the S2 continuous assessment (out of 30) against the average total of S1 and S3; an acceptable gap is ≤5 percentage points.`}
-                </p>
-              </div>
-            </Section>
-          </>
-        )}
-
-        {/* ── SECTION 5: TERM PROGRESS (if data) ────────────────── */}
+        {/* ── SECTION 4: TERM PROGRESS (if data) ────────────────── */}
         {termRows.length > 0 && (
           <>
             <div className="print-break" />
-            <Section num={(multiYearData && years.length >= 2 ? 1 : 0) + (gapRows.length > 0 ? 1 : 0) + 3}
+            <Section num={(multiYearData && years.length >= 2 ? 1 : 0) + 3}
               title={ar ? 'متابعة تطور الأداء الفصلي' : 'Term-by-Term Performance Tracking'}
               subtitle={ar ? 'مسار الأداء من التشخيصي حتى الفصل الثالث' : 'Performance trajectory from diagnostic to Term 3'}>
 
