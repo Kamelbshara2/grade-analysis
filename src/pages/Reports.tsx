@@ -881,12 +881,12 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
   const allFormative: FormativeScore[] = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
   const allExam: ExamScore[] = useMemo(() => dataStore.getExamScores(yearId), [yearId])
 
-  // Apply grade filter
+  // Apply grade filter — health_science has no exam so exclude from gap analysis
   const formativeScores = useMemo(() =>
-    filter.grade ? allFormative.filter(s => s.grade === filter.grade) : allFormative,
+    allFormative.filter(s => s.subjectCode !== 'health_science' && (!filter.grade || s.grade === filter.grade)),
     [allFormative, filter.grade])
   const examScores = useMemo(() =>
-    filter.grade ? allExam.filter(s => s.grade === filter.grade) : allExam,
+    allExam.filter(s => s.subjectCode !== 'health_science' && (!filter.grade || s.grade === filter.grade)),
     [allExam, filter.grade])
 
   const hasFormative = allFormative.length > 0
@@ -972,10 +972,10 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
 
   // ── Per-grade cross-semester data ──
   const gradeData = useMemo(() => {
-    const grades = [...new Set([...allFormative.map(s => s.grade), ...allExam.map(s => s.grade)])].sort((a, b) => a - b)
+    const grades = [...new Set([...formativeScores.map(s => s.grade), ...examScores.map(s => s.grade)])].sort((a, b) => a - b)
     return grades.map(g => {
-      const fRec = allFormative.filter(s => s.grade === g)
-      const eRec = allExam.filter(s => s.grade === g)
+      const fRec = formativeScores.filter(s => s.grade === g)
+      const eRec = examScores.filter(s => s.grade === g)
       const fS1v = avg(fRec.map(s => s.s1)); const eS1v = avg(eRec.map(s => s.s1))
       const fS3v = avg(fRec.map(s => s.s3)); const eS3v = avg(eRec.map(s => s.s3))
       const s1Total = fS1v !== null && eS1v !== null ? pct(fS1v + eS1v, 35) : null
