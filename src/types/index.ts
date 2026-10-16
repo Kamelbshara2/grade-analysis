@@ -79,9 +79,11 @@ export interface SubjectStats {
   count: number;
   passCount: number;
   failCount: number;
+  above75Count: number;
   above90Count: number;
   passRate: number;
   failRate: number;
+  above75Rate: number;
   above90Rate: number;
   mean: number;
   median: number;

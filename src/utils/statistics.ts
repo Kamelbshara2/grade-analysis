@@ -43,8 +43,8 @@ export function computeStats(scores: number[], cycle: Cycle): Omit<SubjectStats,
   const n = scores.length
   if (n === 0) {
     return {
-      count: 0, passCount: 0, failCount: 0, above90Count: 0,
-      passRate: 0, failRate: 0, above90Rate: 0,
+      count: 0, passCount: 0, failCount: 0, above75Count: 0, above90Count: 0,
+      passRate: 0, failRate: 0, above75Rate: 0, above90Rate: 0,
       mean: 0, median: 0, stdDev: 0, variance: 0,
       q1: 0, q3: 0, iqr: 0, min: 0, max: 0,
       band_low: 0, band_low_mid: 0, band_mid: 0, band_high: 0, band_top: 0,
@@ -64,6 +64,7 @@ export function computeStats(scores: number[], cycle: Cycle): Omit<SubjectStats,
 
   const passCount = scores.filter(s => s >= passMark).length
   const failCount = n - passCount
+  const above75Count = scores.filter(s => s >= 75).length
   const above90Count = scores.filter(s => s >= 90).length
 
   const lowMidMin = passMark // 50 or 60
@@ -72,9 +73,11 @@ export function computeStats(scores: number[], cycle: Cycle): Omit<SubjectStats,
     count: n,
     passCount,
     failCount,
+    above75Count,
     above90Count,
     passRate: (passCount / n) * 100,
     failRate: (failCount / n) * 100,
+    above75Rate: (above75Count / n) * 100,
     above90Rate: (above90Count / n) * 100,
     mean,
     median,
@@ -481,6 +484,46 @@ function hashCode(s: string): number {
     h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
   }
   return h
+}
+
+// ===== SCHOOL-WIDE ABOVE-75 (student average across all subjects) =====
+export interface SchoolStats {
+  count: number
+  above75Count: number
+  above75Rate: number
+  mean: number
+}
+
+export function computeSchoolStats(
+  records: StudentRecord[],
+  semester: Semester | 'annual',
+): SchoolStats {
+  const studentAvgs: number[] = []
+  for (const r of records) {
+    const scores: number[] = []
+    for (const subject of Object.keys(r.grades) as SubjectCode[]) {
+      const g = r.grades[subject]
+      if (!g) continue
+      let score: number | null = null
+      if (semester === 1) score = g.s1
+      else if (semester === 2) score = g.s2
+      else if (semester === 3) score = g.s3
+      else score = g.annual
+      if (score !== null) scores.push(score)
+    }
+    if (scores.length > 0) {
+      studentAvgs.push(scores.reduce((a, b) => a + b, 0) / scores.length)
+    }
+  }
+  const count = studentAvgs.length
+  const above75Count = studentAvgs.filter(s => s >= 75).length
+  const mean = count > 0 ? round2(studentAvgs.reduce((a, b) => a + b, 0) / count) : 0
+  return {
+    count,
+    above75Count,
+    above75Rate: count > 0 ? round2((above75Count / count) * 100) : 0,
+    mean,
+  }
 }
 
 // ===== ROUND =====
