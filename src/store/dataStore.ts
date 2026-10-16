@@ -145,6 +145,32 @@ export const dataStore = {
     return semester ? all.filter(s => s.semester === semester) : all
   },
 
+  /** Merge external baseline records — only adds students not already present for that yearId */
+  mergeExternalRecords(yearId: string, incoming: StudentRecord[]): number {
+    if (!_data.years[yearId]) {
+      _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: [], termScores: [], uploadedAt: new Date().toISOString() }
+    }
+    const existing = new Set(_data.years[yearId].records.map(r => r.student.id))
+    const toAdd = incoming.filter(r => !existing.has(r.student.id))
+    _data.years[yearId].records = [..._data.years[yearId].records, ...toAdd]
+    saveData(_data)
+    return toAdd.length
+  },
+
+  /** Merge external baseline TermScores — only adds (studentId, semester, subjectCode) combos not already present */
+  mergeExternalTermScores(yearId: string, incoming: TermScore[]): number {
+    if (!_data.years[yearId]) {
+      _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: [], termScores: [], uploadedAt: new Date().toISOString() }
+    }
+    const existing = new Set(
+      (_data.years[yearId].termScores || []).map(s => `${s.studentId}|${s.semester}|${s.subjectCode}`)
+    )
+    const toAdd = incoming.filter(s => !existing.has(`${s.studentId}|${s.semester}|${s.subjectCode}`))
+    _data.years[yearId].termScores = [...(_data.years[yearId].termScores || []), ...toAdd]
+    saveData(_data)
+    return toAdd.length
+  },
+
   importTermScores(yearId: string, semester: 1 | 2 | 3, scores: TermScore[]): void {
     if (!_data.years[yearId]) {
       _data.years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: [], termScores: scores, uploadedAt: new Date().toISOString() }
@@ -210,5 +236,31 @@ export const dataStore = {
     } catch {
       return 0
     }
+  },
+
+  /**
+   * For a given year, classify students as:
+   *   returning — their ID also appears in any other year's records
+   *   newTransfer — their ID appears only in this year
+   */
+  getStudentGroups(yearId: string): { returning: Set<string>; newTransfer: Set<string> } {
+    const currentIds = new Set((_data.years[yearId]?.records ?? []).map(r => r.student.id))
+    const otherYearIds = new Set<string>()
+    for (const [yr, yd] of Object.entries(_data.years)) {
+      if (yr === yearId) continue
+      for (const r of yd.records) otherYearIds.add(r.student.id)
+    }
+    // Also check TermScores from other years (for years with no annual records)
+    for (const [yr, yd] of Object.entries(_data.years)) {
+      if (yr === yearId) continue
+      for (const s of yd.termScores ?? []) otherYearIds.add(s.studentId)
+    }
+    const returning = new Set<string>()
+    const newTransfer = new Set<string>()
+    for (const id of currentIds) {
+      if (otherYearIds.has(id)) returning.add(id)
+      else newTransfer.add(id)
+    }
+    return { returning, newTransfer }
   },
 }

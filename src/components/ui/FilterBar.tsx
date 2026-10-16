@@ -12,6 +12,7 @@ interface FilterBarProps {
   showSemester?: boolean
   showNationality?: boolean
   showTrack?: boolean  // kept for backward compat; track is always shown when grade is selected
+  showStudentGroup?: boolean
 }
 
 const SEMESTERS: { value: Semester | 'annual'; labelKey: 'sem_1' | 'sem_2' | 'sem_3' | 'sem_annual' }[] = [
@@ -25,6 +26,7 @@ export default function FilterBar({
   filter, onChange, lang,
   showSubject = true, showSemester = true,
   showNationality = false, showTrack = false,
+  showStudentGroup = false,
 }: FilterBarProps) {
   const years = dataStore.getYears()
   const grades = filter.yearId ? dataStore.getUniqueGrades(filter.yearId) : dataStore.getUniqueGrades()
@@ -109,6 +111,18 @@ export default function FilterBar({
             <option value="">{t('all')}</option>
             <option value="citizen">{t('nat_citizen')}</option>
             <option value="expat">{t('nat_expat')}</option>
+          </select>
+        </div>
+      )}
+
+      {/* Student Group */}
+      {showStudentGroup && (
+        <div className="min-w-[160px]">
+          <label className="label">{lang === 'ar' ? 'مجموعة الطلاب' : 'Student Group'}</label>
+          <select className="input" value={filter.studentGroup || ''} onChange={e => set({ studentGroup: (e.target.value as 'returning' | 'new_transfer') || undefined })}>
+            <option value="">{lang === 'ar' ? 'جميع الطلاب' : 'All students'}</option>
+            <option value="returning">{lang === 'ar' ? 'طلاب خالد بن الوليد' : 'Returning students'}</option>
+            <option value="new_transfer">{lang === 'ar' ? 'طلاب منقولون حديثاً' : 'New transfers'}</option>
           </select>
         </div>
       )}

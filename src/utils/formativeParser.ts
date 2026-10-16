@@ -173,7 +173,7 @@ export function parseFormativeFile(buffer: ArrayBuffer, yearId: string): Formati
         const s1 = s1Map[subjectCode] ?? null
         const s3 = s3Map[subjectCode] ?? null
         if (s1 === null && s3 === null) continue
-        scores.push({ studentId, yearId, subjectCode, grade, section, s1, s3 })
+        scores.push({ studentId, yearId, subjectCode, grade, section, s1, s2: null, s3 })
       }
     }
   }
@@ -204,7 +204,7 @@ export function parseExamFile(buffer: ArrayBuffer, yearId: string): ExamScore[] 
         const s1 = s1Map[subjectCode] ?? null
         const s3 = s3Map[subjectCode] ?? null
         if (s1 === null && s3 === null) continue
-        scores.push({ studentId, yearId, subjectCode, grade, section, s1, s3 })
+        scores.push({ studentId, yearId, subjectCode, grade, section, s1, s2: null, s3 })
       }
     }
   }

@@ -120,6 +120,7 @@ export interface AnalysisFilter {
   track?: Track;
   nationality?: Nationality;
   baselineMode?: 'previous' | 'diagnostic';
+  studentGroup?: 'returning' | 'new_transfer';  // returning = in previous year, new_transfer = only in current year
 }
 
 // ===== UPLOAD =====
@@ -152,6 +153,7 @@ export interface FormativeScore {
   grade: number;
   section: string;
   s1: number | null;   // التقويم التكويني/المستمر للفصل الأول
+  s2: number | null;   // التقويم التكويني/المستمر للفصل الثاني
   s3: number | null;   // التقويم التكويني/المستمر للفصل الثالث
 }
 
@@ -162,6 +164,7 @@ export interface ExamScore {
   grade: number;
   section: string;
   s1: number | null;   // درجة اختبار الفصل الأول
+  s2: number | null;   // درجة اختبار الفصل الثاني (null دائماً - لا يوجد اختبار ف2)
   s3: number | null;   // درجة اختبار الفصل الثالث
 }
 

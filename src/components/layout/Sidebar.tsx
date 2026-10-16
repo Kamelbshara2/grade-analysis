@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Upload, BarChart2, TrendingUp,
   Target, GitCompare, FileText, Settings,
-  User, BookMarked, GraduationCap, Award, Printer,
+  User, BookMarked, GraduationCap, Award, Printer, ClipboardList,
 } from 'lucide-react'
 import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
@@ -48,8 +48,9 @@ const NAV_GROUPS = [
     labelAr: 'الإدارة والتقارير',
     labelEn: 'Reports',
     items: [
-      { to: '/reports',       icon: FileText,   key: 'nav_reports' as const },
-      { to: '/print-report',  icon: Printer,    key: 'nav_print_report' as const },
+      { to: '/reports',         icon: FileText,       key: 'nav_reports' as const },
+      { to: '/subject-report', icon: ClipboardList,  key: 'nav_subject_report' as const },
+      { to: '/print-report',   icon: Printer,        key: 'nav_print_report' as const },
       { to: '/methodology',   icon: BookMarked, key: 'nav_methodology' as const },
       { to: '/upload',        icon: Upload,     key: 'nav_upload' as const },
       { to: '/settings',      icon: Settings,   key: 'nav_settings' as const },

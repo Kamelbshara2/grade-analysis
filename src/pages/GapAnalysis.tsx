@@ -6,7 +6,7 @@ import {
 import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
 import { dataStore } from '@/store/dataStore'
-import { filterRecords, computeSemesterGaps } from '@/utils/statistics'
+import { filterRecords, computeSemesterGaps, computeSemesterGapsFromTermScores } from '@/utils/statistics'
 import clsx from 'clsx'
 
 interface GapAnalysisProps { lang: Language }
@@ -40,7 +40,14 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
       yearId ? dataStore.getRecordsByYear(yearId) : dataStore.getAllRecords(),
       { grade, track: track as any },
     )
-    return computeSemesterGaps(records)
+    const gaps = computeSemesterGaps(records)
+    if (gaps.length > 0) return gaps
+    // Fall back to TermScore data (e.g. 2025-2026 with no annual Manhal file)
+    if (yearId) {
+      const termScores = dataStore.getTermScores(yearId)
+      if (termScores.length > 0) return computeSemesterGapsFromTermScores(termScores, { grade, track })
+    }
+    return gaps
   }, [yearId, grade, track])
 
   const chartData = gaps.map(g => ({

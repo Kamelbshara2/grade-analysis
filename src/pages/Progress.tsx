@@ -44,7 +44,12 @@ export default function Progress({ lang }: ProgressProps) {
 
   const currentRecords = useMemo(() => {
     const r = dataStore.getRecordsByYear(currentYear)
-    return filterRecords(r, { grade: filter.grade, section: filter.section, track: filter.track, nationality: filter.nationality })
+    let allowedIds: Set<string> | undefined
+    if (filter.studentGroup && currentYear) {
+      const groups = dataStore.getStudentGroups(currentYear)
+      allowedIds = filter.studentGroup === 'returning' ? groups.returning : groups.newTransfer
+    }
+    return filterRecords(r, { grade: filter.grade, section: filter.section, track: filter.track, nationality: filter.nationality }, allowedIds)
   }, [currentYear, filter])
 
   const previousRecords = useMemo(() => prevYear ? dataStore.getRecordsByYear(prevYear) : [], [prevYear])
@@ -98,7 +103,7 @@ export default function Progress({ lang }: ProgressProps) {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">{t('progress_title')}</h1>
 
-      <FilterBar filter={filter} onChange={f => setFilter({ ...f, semester: filter.semester })} lang={lang} showSubject showSemester showNationality showTrack />
+      <FilterBar filter={filter} onChange={f => setFilter({ ...f, semester: filter.semester })} lang={lang} showSubject showSemester showNationality showTrack showStudentGroup />
 
       {/* Options */}
       <div className="flex flex-wrap gap-4 items-center">

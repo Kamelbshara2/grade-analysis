@@ -23,7 +23,12 @@ export default function Analysis({ lang }: AnalysisProps) {
     const all = filter.yearId
       ? dataStore.getRecordsByYear(filter.yearId)
       : dataStore.getAllRecords()
-    return filterRecords(all, filter)
+    let allowedIds: Set<string> | undefined
+    if (filter.studentGroup && filter.yearId) {
+      const groups = dataStore.getStudentGroups(filter.yearId)
+      allowedIds = filter.studentGroup === 'returning' ? groups.returning : groups.newTransfer
+    }
+    return filterRecords(all, filter, allowedIds)
   }, [filter])
 
   const cycle = useMemo(() => {
@@ -64,6 +69,7 @@ export default function Analysis({ lang }: AnalysisProps) {
         showSemester
         showNationality
         showTrack
+        showStudentGroup
       />
 
       <p className="text-sm text-gray-500">

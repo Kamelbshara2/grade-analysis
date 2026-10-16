@@ -1,15 +1,17 @@
 import type {
   StudentRecord, SubjectCode, SubjectStats, ProgressResult,
-  Cycle, Semester, AnalysisFilter, Nationality, SubjectGrade
+  Cycle, Semester, AnalysisFilter, Nationality, SubjectGrade, TermScore
 } from '@/types'
 import { getPassMark, getCycle, SUBJECT_LABELS } from './subjectMapping'
 
 // ===== FILTER =====
 export function filterRecords(
   records: StudentRecord[],
-  filter: AnalysisFilter
+  filter: AnalysisFilter,
+  allowedStudentIds?: Set<string>
 ): StudentRecord[] {
   return records.filter(r => {
+    if (allowedStudentIds && !allowedStudentIds.has(r.student.id)) return false
     if (filter.grade && r.grade !== filter.grade) return false
     if (filter.section && r.section !== filter.section) return false
     if (filter.track && r.track !== filter.track) return false
@@ -685,6 +687,103 @@ export function computeSemesterGaps(
       studentsWithDrop,
       studentsWithGain,
       totalStudents: pairedStudents.length,
+      priority,
+    }
+  }).sort((a, b) => (a.gapS1S3 ?? 0) - (b.gapS1S3 ?? 0))
+}
+
+/**
+ * Compute semester gaps directly from TermScore records (for years with no annual Manhal file).
+ * Groups by studentId+subjectCode, collects s1/s2/s3, then computes class averages and gaps.
+ */
+export function computeSemesterGapsFromTermScores(
+  termScores: TermScore[],
+  opts?: { grade?: number; section?: string; track?: string }
+): SemesterGap[] {
+  // Filter by grade/section if requested
+  const filtered = opts?.grade || opts?.section
+    ? termScores.filter(s => {
+        if (opts.grade && s.grade !== opts.grade) return false
+        if (opts.section && s.section !== opts.section) return false
+        return true
+      })
+    : termScores
+
+  // Build per-student, per-subject semester map
+  const studentSubjectMap = new Map<string, Map<SubjectCode, { s1?: number; s2?: number; s3?: number }>>()
+
+  for (const score of filtered) {
+    if (score.score === null) continue
+    if (!studentSubjectMap.has(score.studentId)) {
+      studentSubjectMap.set(score.studentId, new Map())
+    }
+    const subMap = studentSubjectMap.get(score.studentId)!
+    if (!subMap.has(score.subjectCode)) subMap.set(score.subjectCode, {})
+    const entry = subMap.get(score.subjectCode)!
+    if (score.semester === 1) entry.s1 = score.score
+    else if (score.semester === 2) entry.s2 = score.score
+    else if (score.semester === 3) entry.s3 = score.score
+  }
+
+  // Collect unique subjects
+  const allSubjects = new Set<SubjectCode>()
+  for (const subMap of studentSubjectMap.values()) {
+    for (const code of subMap.keys()) allSubjects.add(code)
+  }
+
+  return [...allSubjects].map(subjectCode => {
+    const s1s: number[] = []
+    const s2s: number[] = []
+    const s3s: number[] = []
+    const pairs13: { s1: number; s3: number }[] = []
+
+    for (const subMap of studentSubjectMap.values()) {
+      const entry = subMap.get(subjectCode)
+      if (!entry) continue
+      if (entry.s1 !== undefined) s1s.push(entry.s1)
+      if (entry.s2 !== undefined) s2s.push(entry.s2)
+      if (entry.s3 !== undefined) s3s.push(entry.s3)
+      if (entry.s1 !== undefined && entry.s3 !== undefined) {
+        pairs13.push({ s1: entry.s1, s3: entry.s3 })
+      }
+    }
+
+    const avg = (arr: number[]) => arr.length > 0 ? round2(arr.reduce((a, b) => a + b, 0) / arr.length) : null
+    const avgS1 = avg(s1s)
+    const avgS2 = avg(s2s)
+    const avgS3 = avg(s3s)
+    const gapS1S3 = avgS1 !== null && avgS3 !== null ? round2(avgS3 - avgS1) : null
+    const gapS1S2 = avgS1 !== null && avgS2 !== null ? round2(avgS2 - avgS1) : null
+    const gapS2S3 = avgS2 !== null && avgS3 !== null ? round2(avgS3 - avgS2) : null
+
+    const studentsWithDrop = pairs13.filter(p => p.s3 < p.s1).length
+    const studentsWithGain = pairs13.filter(p => p.s3 > p.s1).length
+
+    let priority: SemesterGap['priority'] = 'ok'
+    if (gapS1S3 !== null) {
+      if (gapS1S3 < -15) priority = 'critical'
+      else if (gapS1S3 < -8) priority = 'high'
+      else if (gapS1S3 < -3) priority = 'medium'
+      else if (gapS1S3 < 0) priority = 'low'
+      else priority = 'ok'
+    }
+
+    const labels = SUBJECT_LABELS[subjectCode] ?? { ar: subjectCode, en: subjectCode }
+
+    return {
+      subjectCode,
+      subjectNameAr: labels.ar,
+      subjectNameEn: labels.en,
+      avgS1,
+      avgS2,
+      avgS3,
+      avgAnnual: null,
+      gapS1S3,
+      gapS1S2,
+      gapS2S3,
+      studentsWithDrop,
+      studentsWithGain,
+      totalStudents: pairs13.length,
       priority,
     }
   }).sort((a, b) => (a.gapS1S3 ?? 0) - (b.gapS1S3 ?? 0))

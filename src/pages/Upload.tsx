@@ -6,6 +6,7 @@ import { parseAnnualGradeFile, parseNationalityFile, parseStudentRosterFile } fr
 import { parseDiagnosticFile } from '@/utils/diagnosticParser'
 import { parseFormativeFile, parseExamFile } from '@/utils/formativeParser'
 import { parseTermFile, parseNoorTermFile, isNoorTermFile } from '@/utils/termParser'
+import { parseSimpleBaselineFile, parseNoorMultiTermFile, isNoorMultiTermFile } from '@/utils/externalBaselineParser'
 import { dataStore } from '@/store/dataStore'
 import type { UploadResult } from '@/types'
 import { downloadAnnualTemplate, downloadDiagnosticTemplate, downloadNationalityTemplate, downloadFormativeTemplate, downloadExamTemplate, downloadTermTemplate } from '@/utils/templateGenerator'
@@ -14,7 +15,7 @@ interface UploadProps {
   lang: Language
 }
 
-type UploadMode = 'annual' | 'diagnostic' | 'nationality' | 'formative' | 'exam' | 'term' | 'roster'
+type UploadMode = 'annual' | 'diagnostic' | 'nationality' | 'formative' | 'exam' | 'term' | 'roster' | 'external_baseline'
 
 interface UploadState {
   status: 'idle' | 'processing' | 'success' | 'error'
@@ -26,6 +27,7 @@ export default function Upload({ lang }: UploadProps) {
   const [mode, setMode] = useState<UploadMode>('annual')
   const [yearId, setYearId] = useState('')
   const [termSemester, setTermSemester] = useState<1 | 2 | 3>(1)
+  const [baselineGrade, setBaselineGrade] = useState<number>(6)
   const [state, setState] = useState<UploadState>({ status: 'idle' })
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -148,6 +150,40 @@ export default function Upload({ lang }: UploadProps) {
             sections,
           },
         })
+      } else if (mode === 'external_baseline') {
+        const isNoor = isNoorMultiTermFile(buffer)
+        if (isNoor) {
+          const scores = parseNoorMultiTermFile(buffer, baselineGrade, yearId.trim())
+          const added = dataStore.mergeExternalTermScores(yearId.trim(), scores)
+          setState({
+            status: 'success',
+            result: {
+              yearId: yearId.trim(),
+              totalRows: scores.length,
+              imported: added,
+              skipped: scores.length - added,
+              errors: [],
+              subjects: [...new Set(scores.map(s => s.subjectCode))] as any,
+              sections: [],
+            },
+          })
+        } else {
+          const records = parseSimpleBaselineFile(buffer, baselineGrade, yearId.trim())
+          const added = dataStore.mergeExternalRecords(yearId.trim(), records)
+          const sections = [...new Set(records.map(r => `${r.grade}/${r.section}`))]
+          setState({
+            status: 'success',
+            result: {
+              yearId: yearId.trim(),
+              totalRows: records.length,
+              imported: added,
+              skipped: records.length - added,
+              errors: [],
+              subjects: [...new Set(records.flatMap(r => Object.keys(r.grades)))] as any,
+              sections,
+            },
+          })
+        }
       } else {
         const map = parseNationalityFile(buffer)
         // Re-apply to all years
@@ -199,6 +235,7 @@ export default function Upload({ lang }: UploadProps) {
     { key: 'formative', label: lang === 'ar' ? 'التقويم التكويني' : 'Formative' },
     { key: 'exam', label: lang === 'ar' ? 'درجات الاختبار' : 'Exam Scores' },
     { key: 'term', label: lang === 'ar' ? 'درجات الفصل' : 'Term Scores' },
+    { key: 'external_baseline', label: lang === 'ar' ? 'خط الأساس الخارجي' : 'External Baseline' },
   ]
 
   return (
@@ -249,11 +286,30 @@ export default function Upload({ lang }: UploadProps) {
               </select>
             </div>
           )}
+          {mode === 'external_baseline' && (
+            <div>
+              <label className="label">{lang === 'ar' ? 'الصف الحالي للملف' : 'File\'s Current Grade'}</label>
+              <select
+                className="input"
+                value={baselineGrade}
+                onChange={e => setBaselineGrade(Number(e.target.value))}
+              >
+                {[5,6,7,8,9,10,11,12].map(g => (
+                  <option key={g} value={g}>{lang === 'ar' ? `الصف ${g}` : `Grade ${g}`}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                {lang === 'ar'
+                  ? `سيتم حفظ البيانات كصف ${baselineGrade - 1}`
+                  : `Data will be stored as Grade ${baselineGrade - 1}`}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
       {/* Template download */}
-      <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 rounded-lg px-4 py-3">
+      {mode !== 'external_baseline' && <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 rounded-lg px-4 py-3">
         <div>
           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {lang === 'ar' ? 'تنزيل نموذج فارغ' : 'Download Empty Template'}
@@ -276,7 +332,7 @@ export default function Upload({ lang }: UploadProps) {
           <Download size={15} />
           {lang === 'ar' ? 'تنزيل' : 'Download'}
         </button>
-      </div>
+      </div>}
 
       {/* Drop zone */}
       <div
