@@ -69,9 +69,16 @@ export async function onRequestGet({ env }) {
       })
     }
 
+    // Ensure year entries exist even when student_records is empty
+    const ensureYear = (yearId) => {
+      if (!years[yearId]) {
+        years[yearId] = { yearId, records: [], diagnosticScores: [], formativeScores: [], examScores: [], termScores: [], uploadedAt: new Date().toISOString() }
+      }
+    }
+
     // Attach term/formative/exam scores per year
     for (const row of termScores) {
-      if (!years[row.year_id]) continue
+      ensureYear(row.year_id)
       years[row.year_id].termScores.push({
         studentId: row.student_id,
         yearId: row.year_id,
@@ -83,7 +90,7 @@ export async function onRequestGet({ env }) {
       })
     }
     for (const row of formative) {
-      if (!years[row.year_id]) continue
+      ensureYear(row.year_id)
       years[row.year_id].formativeScores.push({
         studentId: row.student_id,
         yearId: row.year_id,
@@ -96,7 +103,7 @@ export async function onRequestGet({ env }) {
       })
     }
     for (const row of exam) {
-      if (!years[row.year_id]) continue
+      ensureYear(row.year_id)
       years[row.year_id].examScores.push({
         studentId: row.student_id,
         yearId: row.year_id,
