@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer,
+  ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts'
 import { t } from '@/i18n/translations'
 import type { Language, SubjectCode } from '@/types'
 import { dataStore } from '@/store/dataStore'
-import { filterRecords, computeSubjectStats, round2 } from '@/utils/statistics'
+import { filterRecords, computeSubjectStats, computeSchoolStats, round2 } from '@/utils/statistics'
 import { getCycle, SUBJECT_LABELS } from '@/utils/subjectMapping'
 
 interface ComparisonProps {
@@ -16,17 +16,19 @@ interface ComparisonProps {
 const COLORS = ['#3b82f6', '#22c55e', '#f97316', '#a855f7', '#ef4444']
 
 const METRICS = [
-  { key: 'passRate', label: 'analysis_pass_rate' as const },
-  { key: 'above90Rate', label: 'analysis_above90' as const },
-  { key: 'mean', label: 'analysis_mean' as const },
-  { key: 'failRate', label: 'analysis_fail_rate' as const },
+  { key: 'above75Rate', labelAr: 'طلاب فوق 75%', labelEn: 'Students Above 75%' },
+  { key: 'passRate', labelAr: 'نسبة النجاح', labelEn: 'Pass Rate' },
+  { key: 'above90Rate', labelAr: 'فوق 90%', labelEn: 'Above 90%' },
+  { key: 'mean', labelAr: 'المتوسط', labelEn: 'Mean' },
+  { key: 'failRate', labelAr: 'نسبة الرسوب', labelEn: 'Fail Rate' },
 ]
 
 export default function Comparison({ lang }: ComparisonProps) {
+  const ar = lang === 'ar'
   const years = dataStore.getYears()
   const [selectedYears, setSelectedYears] = useState<string[]>(years.slice(-3))
   const [subject, setSubject] = useState<SubjectCode>('arabic')
-  const [metric, setMetric] = useState<string>('passRate')
+  const [metric, setMetric] = useState<string>('above75Rate')
   const [grade, setGrade] = useState<number | undefined>()
 
   function toggleYear(y: string) {
@@ -44,6 +46,7 @@ export default function Comparison({ lang }: ComparisonProps) {
       const stats = computeSubjectStats(records, subject, 'annual', cycle)
       return {
         year: yearId,
+        above75Rate: round2(stats.above75Rate),
         passRate: round2(stats.passRate),
         failRate: round2(stats.failRate),
         mean: round2(stats.mean),
@@ -52,6 +55,17 @@ export default function Comparison({ lang }: ComparisonProps) {
       }
     })
   }, [selectedYears, subject, grade])
+
+  // School-wide data: % students with overall avg ≥ 75 per year
+  const schoolData = useMemo(() => {
+    return selectedYears.sort().map(yearId => {
+      const records = grade
+        ? filterRecords(dataStore.getRecordsByYear(yearId), { grade })
+        : dataStore.getRecordsByYear(yearId)
+      const s = computeSchoolStats(records, 'annual')
+      return { year: yearId, above75Rate: s.above75Rate, mean: s.mean, count: s.count }
+    })
+  }, [selectedYears, grade])
 
   const subjects = Object.entries(SUBJECT_LABELS) as [SubjectCode, { ar: string; en: string }][]
 
@@ -88,7 +102,7 @@ export default function Comparison({ lang }: ComparisonProps) {
           <label className="label">{t('comparison_metric')}</label>
           <select className="input" value={metric} onChange={e => setMetric(e.target.value)}>
             {METRICS.map(m => (
-              <option key={m.key} value={m.key}>{t(m.label)}</option>
+              <option key={m.key} value={m.key}>{ar ? m.labelAr : m.labelEn}</option>
             ))}
           </select>
         </div>
@@ -111,12 +125,12 @@ export default function Comparison({ lang }: ComparisonProps) {
         ))}
       </div>
 
-      {/* Chart */}
+      {/* Per-subject chart */}
       <div className="card">
         <h2 className="font-semibold mb-3">
-          {SUBJECT_LABELS[subject]?.[lang]} — {t(METRICS.find(m => m.key === metric)?.label ?? 'analysis_pass_rate')}
+          {SUBJECT_LABELS[subject]?.[lang]} — {METRICS.find(m => m.key === metric)?.[ar ? 'labelAr' : 'labelEn']}
         </h2>
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height={260}>
           <LineChart data={chartData} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis dataKey="year" tick={{ fontSize: 12 }} />
@@ -127,13 +141,15 @@ export default function Comparison({ lang }: ComparisonProps) {
         </ResponsiveContainer>
       </div>
 
-      {/* Table */}
+      {/* Per-subject table */}
       <div className="card overflow-x-auto">
+        <h2 className="font-semibold mb-3">{SUBJECT_LABELS[subject]?.[lang]} — {ar ? 'تفاصيل حسب السنة' : 'Year-by-year breakdown'}</h2>
         <table className="table-base">
           <thead>
             <tr>
               <th>{t('year')}</th>
               <th>{t('analysis_count')}</th>
+              <th className="text-green-700">{ar ? 'فوق 75%' : 'Above 75%'}</th>
               <th>{t('analysis_pass_rate')}</th>
               <th>{t('analysis_fail_rate')}</th>
               <th>{t('analysis_mean')}</th>
@@ -145,6 +161,7 @@ export default function Comparison({ lang }: ComparisonProps) {
               <tr key={d.year}>
                 <td className="font-mono">{d.year}</td>
                 <td>{d.count}</td>
+                <td className={`font-semibold ${d.above75Rate >= 70 ? 'text-green-600' : d.above75Rate >= 50 ? 'text-yellow-600' : 'text-red-500'}`}>{d.above75Rate}%</td>
                 <td className="text-green-600">{d.passRate}%</td>
                 <td className="text-red-500">{d.failRate}%</td>
                 <td>{d.mean}</td>
@@ -154,6 +171,58 @@ export default function Comparison({ lang }: ComparisonProps) {
           </tbody>
         </table>
       </div>
+
+      {/* School-wide above-75 across years */}
+      {schoolData.some(d => d.count > 0) && (
+        <div className="card border-l-4 border-primary-500">
+          <h2 className="font-semibold mb-1 text-primary-700">{ar ? 'المدرسة — % طلاب متوسطهم العام ≥75%' : 'School — % Students with Overall Average ≥75%'}</h2>
+          <p className="text-xs text-gray-500 mb-4">{ar ? 'يحسب متوسط كل طالب عبر جميع موادهم ثم يقيس نسبة من وصلوا 75% فأكثر' : 'Computes each student\'s average across all their subjects, then measures what % reached 75% or above'}</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={schoolData} margin={{ top: 4, right: 16, left: -8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis dataKey="year" tick={{ fontSize: 12 }} />
+              <YAxis tickFormatter={v => `${v}%`} domain={[0, 100]} tick={{ fontSize: 12 }} />
+              <Tooltip formatter={(v: number) => [`${v}%`, ar ? 'فوق 75%' : 'Above 75%']} />
+              {schoolData.map((d, i) => (
+                <Cell key={d.year} fill={d.above75Rate >= 70 ? '#22c55e' : d.above75Rate >= 50 ? '#f59e0b' : '#ef4444'} />
+              ))}
+              <Bar dataKey="above75Rate" radius={[4, 4, 0, 0]}>
+                {schoolData.map((d, i) => (
+                  <Cell key={d.year} fill={d.above75Rate >= 70 ? '#22c55e' : d.above75Rate >= 50 ? '#f59e0b' : '#ef4444'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="mt-3 overflow-x-auto">
+            <table className="table-base">
+              <thead>
+                <tr>
+                  <th>{t('year')}</th>
+                  <th>{ar ? 'إجمالي الطلاب' : 'Total Students'}</th>
+                  <th>{ar ? 'متوسط المدرسة' : 'School Mean'}</th>
+                  <th className="text-green-700">{ar ? '% فوق 75%' : '% Above 75%'}</th>
+                  <th>{ar ? 'التقييم' : 'Rating'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schoolData.map(d => (
+                  <tr key={d.year}>
+                    <td className="font-mono">{d.year}</td>
+                    <td>{d.count}</td>
+                    <td>{d.mean}%</td>
+                    <td className={`font-bold ${d.above75Rate >= 70 ? 'text-green-600' : d.above75Rate >= 50 ? 'text-yellow-600' : 'text-red-500'}`}>{d.above75Rate}%</td>
+                    <td>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.above75Rate >= 70 ? 'bg-green-100 text-green-700' : d.above75Rate >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                        {d.above75Rate >= 70 ? (ar ? 'ممتاز' : 'Excellent') : d.above75Rate >= 50 ? (ar ? 'جيد' : 'Good') : (ar ? 'يحتاج تحسين' : 'Needs improvement')}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
