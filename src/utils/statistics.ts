@@ -533,7 +533,7 @@ export interface AchievementIndicator {
   above70Count: number; above70Rate: number
   above75Count: number; above75Rate: number
   // المؤشر 1.1 — based on above75Rate
-  level: 'excellent' | 'very_good' | 'good' | 'below'
+  level: 'excellent' | 'very_good' | 'good' | 'acceptable' | 'weak'
   levelAr: string
   levelEn: string
   proportionAr: string
@@ -573,10 +573,11 @@ export function computeAchievementIndicators(
     let level: AchievementIndicator['level']
     let levelAr: string
     let levelEn: string
-    if (above75Rate >= 70) { level = 'excellent'; levelAr = 'ممتاز'; levelEn = 'Excellent' }
+    if (passRate < 75) { level = 'weak'; levelAr = 'ضعيف'; levelEn = 'Weak' }
+    else if (above75Rate >= 70) { level = 'excellent'; levelAr = 'ممتاز'; levelEn = 'Excellent' }
     else if (above75Rate >= 60) { level = 'very_good'; levelAr = 'جيد جداً'; levelEn = 'Very Good' }
     else if (above75Rate >= 50) { level = 'good'; levelAr = 'جيد'; levelEn = 'Good' }
-    else { level = 'below'; levelAr = 'دون المقبول'; levelEn = 'Below Standard' }
+    else { level = 'acceptable'; levelAr = 'مقبول'; levelEn = 'Acceptable' }
 
     return {
       subjectCode,

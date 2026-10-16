@@ -1,43 +1,117 @@
 /**
  * Cloudflare Pages Function: GET /api/data
- * Reads all students from D1 and returns them in AppData format.
+ * Reads all data from Neon and returns AppData format.
  */
+import { neon } from '@neondatabase/serverless'
 
 export async function onRequestGet({ env }) {
-  const db = env.DB
-  if (!db) {
-    return new Response(JSON.stringify({ error: 'DB binding not found' }), {
-      status: 500,
-      headers: corsHeaders(),
-    })
+  const url = env.DATABASE_URL
+  if (!url) {
+    return json({ error: 'DATABASE_URL not configured' }, 500)
   }
 
   try {
-    const { results } = await db.prepare('SELECT * FROM students ORDER BY year, grade, section_num').all()
+    const sql = neon(url)
 
-    // Build AppData format
-    const years = {}
+    const [records, subjects, termScores, formative, exam] = await Promise.all([
+      sql`SELECT * FROM student_records ORDER BY year_id, grade, section`,
+      sql`SELECT * FROM subject_grades`,
+      sql`SELECT * FROM term_scores`,
+      sql`SELECT * FROM formative_scores`,
+      sql`SELECT * FROM exam_scores`,
+    ])
 
-    for (const row of results) {
-      const yearId = row.year
-      if (!years[yearId]) {
-        years[yearId] = { yearId, records: [], diagnosticScores: [], uploadedAt: new Date().toISOString() }
+    // Index subject grades by student_id + year_id
+    const subjectMap = {}
+    for (const row of subjects) {
+      const key = `${row.student_id}::${row.year_id}`
+      if (!subjectMap[key]) subjectMap[key] = {}
+      subjectMap[key][row.subject_code] = {
+        s1: row.s1 !== null ? Number(row.s1) : null,
+        s2: row.s2 !== null ? Number(row.s2) : null,
+        s3: row.s3 !== null ? Number(row.s3) : null,
+        annual: row.annual !== null ? Number(row.annual) : null,
       }
-
-      const record = rowToRecord(row)
-      years[yearId].records.push(record)
     }
 
-    const body = JSON.stringify({ years, learningOutcomes: [], outcomeScores: [] })
-    return new Response(body, {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders() },
-    })
+    // Build student records per year
+    const years = {}
+    for (const row of records) {
+      const yearId = row.year_id
+      if (!years[yearId]) {
+        years[yearId] = {
+          yearId,
+          records: [],
+          diagnosticScores: [],
+          formativeScores: [],
+          examScores: [],
+          termScores: [],
+          uploadedAt: row.uploaded_at,
+        }
+      }
+      const key = `${row.student_id}::${yearId}`
+      years[yearId].records.push({
+        student: {
+          id: row.student_id,
+          name: row.student_name,
+          nationality: row.nationality,
+        },
+        yearId,
+        grade: Number(row.grade),
+        track: row.track,
+        section: row.section,
+        sectionRaw: row.section_raw,
+        cycle: Number(row.cycle),
+        grades: subjectMap[key] || {},
+        annualAvg: row.annual_avg !== null ? Number(row.annual_avg) : null,
+        annualTotal: row.annual_total !== null ? Number(row.annual_total) : null,
+        status: row.status,
+      })
+    }
+
+    // Attach term/formative/exam scores per year
+    for (const row of termScores) {
+      if (!years[row.year_id]) continue
+      years[row.year_id].termScores.push({
+        studentId: row.student_id,
+        yearId: row.year_id,
+        semester: Number(row.semester),
+        subjectCode: row.subject_code,
+        grade: Number(row.grade),
+        section: row.section,
+        score: row.score !== null ? Number(row.score) : null,
+      })
+    }
+    for (const row of formative) {
+      if (!years[row.year_id]) continue
+      years[row.year_id].formativeScores.push({
+        studentId: row.student_id,
+        yearId: row.year_id,
+        subjectCode: row.subject_code,
+        grade: Number(row.grade),
+        section: row.section,
+        s1: row.s1 !== null ? Number(row.s1) : null,
+        s2: row.s2 !== null ? Number(row.s2) : null,
+        s3: row.s3 !== null ? Number(row.s3) : null,
+      })
+    }
+    for (const row of exam) {
+      if (!years[row.year_id]) continue
+      years[row.year_id].examScores.push({
+        studentId: row.student_id,
+        yearId: row.year_id,
+        subjectCode: row.subject_code,
+        grade: Number(row.grade),
+        section: row.section,
+        s1: row.s1 !== null ? Number(row.s1) : null,
+        s2: row.s2 !== null ? Number(row.s2) : null,
+        s3: row.s3 !== null ? Number(row.s3) : null,
+      })
+    }
+
+    return json({ years, learningOutcomes: [], outcomeScores: [] }, 200)
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500,
-      headers: corsHeaders(),
-    })
+    return json({ error: String(err) }, 500)
   }
 }
 
@@ -45,55 +119,17 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: corsHeaders() })
 }
 
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+  })
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
-  }
-}
-
-function nullOrNum(v) {
-  if (v === null || v === undefined) return null
-  const n = Number(v)
-  return isNaN(n) ? null : n
-}
-
-function rowToRecord(row) {
-  const grade = Number(row.grade)
-  const cycle = grade >= 9 ? 3 : 2
-
-  const subjects = ['arabic', 'english', 'math', 'science', 'islamic', 'social', 'physics', 'chemistry', 'biology']
-  const grades = {}
-  for (const s of subjects) {
-    const s1 = nullOrNum(row[`${s}_s1`])
-    const s2 = nullOrNum(row[`${s}_s2`])
-    const s3 = nullOrNum(row[`${s}_s3`])
-    const annual = nullOrNum(row[`${s}_annual`])
-    if (s1 !== null || s2 !== null || s3 !== null || annual !== null) {
-      grades[s] = { s1, s2, s3, annual }
-    }
-  }
-
-  const passMark = cycle === 3 ? 60 : 50
-  const avg = nullOrNum(row.average)
-  const status = avg === null ? 'unknown' : avg >= passMark ? 'pass' : 'fail'
-
-  return {
-    student: {
-      id: String(row.student_id),
-      name: row.name || '',
-      nationality: 'unknown',
-    },
-    yearId: row.year,
-    grade,
-    track: row.track || 'general',
-    section: String(row.section_num || '1'),
-    sectionRaw: row.section_raw || '',
-    cycle,
-    grades,
-    annualAvg: avg,
-    annualTotal: null,
-    status,
   }
 }

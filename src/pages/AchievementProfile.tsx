@@ -66,8 +66,11 @@ export default function AchievementProfile({ lang }: AchievementProfileProps) {
     if (total === 0) return null
     const above75 = records.filter(r => (r.annualAvg ?? 0) >= 75).length
     const above75Rate = round2((above75 / total) * 100)
-    let level = 'below', levelAr = 'دون المقبول', levelEn = 'Below Standard'
-    if (above75Rate >= 70) { level = 'excellent'; levelAr = 'ممتاز'; levelEn = 'Excellent' }
+    const passCount = records.filter(r => r.status === 'pass').length
+    const passRate = round2((passCount / total) * 100)
+    let level = 'acceptable', levelAr = 'مقبول', levelEn = 'Acceptable'
+    if (passRate < 75) { level = 'weak'; levelAr = 'ضعيف'; levelEn = 'Weak' }
+    else if (above75Rate >= 70) { level = 'excellent'; levelAr = 'ممتاز'; levelEn = 'Excellent' }
     else if (above75Rate >= 60) { level = 'very_good'; levelAr = 'جيد جداً'; levelEn = 'Very Good' }
     else if (above75Rate >= 50) { level = 'good'; levelAr = 'جيد'; levelEn = 'Good' }
     return { total, above75, above75Rate, level, levelAr, levelEn }
@@ -157,7 +160,8 @@ export default function AchievementProfile({ lang }: AchievementProfileProps) {
                         'bg-green-500': schoolStats.level === 'excellent',
                         'bg-teal-500': schoolStats.level === 'very_good',
                         'bg-yellow-400': schoolStats.level === 'good',
-                        'bg-red-400': schoolStats.level === 'below',
+                        'bg-orange-400': schoolStats.level === 'acceptable',
+                        'bg-red-400': schoolStats.level === 'weak',
                       })}
                       style={{ width: `${Math.min(schoolStats.above75Rate, 100)}%` }}
                     />
@@ -173,7 +177,8 @@ export default function AchievementProfile({ lang }: AchievementProfileProps) {
                 </div>
                 {/* Reference bands legend */}
                 <div className="text-xs text-gray-500 space-y-1 border-s ps-4">
-                  <p><span className={clsx('inline-block w-2 h-2 rounded-full me-1 bg-red-400')} />{ar ? 'دون المقبول' : 'Below'}: &lt; 50%</p>
+                  <p><span className={clsx('inline-block w-2 h-2 rounded-full me-1 bg-orange-400')} />{ar ? 'مقبول' : 'Acceptable'}: &lt; 50%</p>
+                  <p><span className={clsx('inline-block w-2 h-2 rounded-full me-1 bg-red-400')} />{ar ? 'ضعيف' : 'Weak'}: {ar ? 'نسبة النجاح < 75%' : 'Pass Rate < 75%'}</p>
                   <p><span className={clsx('inline-block w-2 h-2 rounded-full me-1 bg-yellow-400')} />{ar ? 'جيد' : 'Good'}: ≥ 50%</p>
                   <p><span className={clsx('inline-block w-2 h-2 rounded-full me-1 bg-teal-500')} />{ar ? 'جيد جداً' : 'Very Good'}: ≥ 60%</p>
                   <p><span className={clsx('inline-block w-2 h-2 rounded-full me-1 bg-green-500')} />{ar ? 'ممتاز' : 'Excellent'}: ≥ 70%</p>
@@ -296,7 +301,7 @@ export default function AchievementProfile({ lang }: AchievementProfileProps) {
             <p className="pt-2 font-medium text-gray-700 dark:text-gray-300">
               {ar ? 'مستويات المؤشر ١.١ (بناءً على نسبة الطلاب فوق 75%):' : 'Indicator 1.1 levels (based on % of students ≥75%):'}
             </p>
-            <p>{ar ? '≥70% → ممتاز  |  ≥60% → جيد جداً  |  ≥50% → جيد  |  <50% → دون المقبول' : '≥70% → Excellent  |  ≥60% → Very Good  |  ≥50% → Good  |  <50% → Below Standard'}</p>
+            <p>{ar ? '≥70% → ممتاز  |  ≥60% → جيد جداً  |  ≥50% → جيد  |  <50% → مقبول  |  نسبة نجاح <75% → ضعيف' : '≥70% → Excellent  |  ≥60% → Very Good  |  ≥50% → Good  |  <50% → Acceptable  |  Pass Rate <75% → Weak'}</p>
           </div>
         </>
       )}

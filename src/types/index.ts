@@ -152,6 +152,7 @@ export interface FormativeScore {
   grade: number;
   section: string;
   s1: number | null;   // التقويم التكويني/المستمر للفصل الأول
+  s2: number | null;   // التقويم التكويني/المستمر للفصل الثاني
   s3: number | null;   // التقويم التكويني/المستمر للفصل الثالث
 }
 
@@ -162,6 +163,7 @@ export interface ExamScore {
   grade: number;
   section: string;
   s1: number | null;   // درجة اختبار الفصل الأول
+  s2: number | null;   // درجة اختبار الفصل الثاني
   s3: number | null;   // درجة اختبار الفصل الثالث
 }
 
