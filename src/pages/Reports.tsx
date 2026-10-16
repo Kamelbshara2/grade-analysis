@@ -881,12 +881,12 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
   const allFormative: FormativeScore[] = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
   const allExam: ExamScore[] = useMemo(() => dataStore.getExamScores(yearId), [yearId])
 
-  // Apply grade filter
+  // Apply grade filter — health_science has no exam so exclude from gap analysis
   const formativeScores = useMemo(() =>
-    filter.grade ? allFormative.filter(s => s.grade === filter.grade) : allFormative,
+    allFormative.filter(s => s.subjectCode !== 'health_science' && (!filter.grade || s.grade === filter.grade)),
     [allFormative, filter.grade])
   const examScores = useMemo(() =>
-    filter.grade ? allExam.filter(s => s.grade === filter.grade) : allExam,
+    allExam.filter(s => s.subjectCode !== 'health_science' && (!filter.grade || s.grade === filter.grade)),
     [allExam, filter.grade])
 
   const hasFormative = allFormative.length > 0
@@ -900,11 +900,25 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
   }
   const pct = (val: number | null, denom: number) => val !== null ? round2(val / denom * 100) : null
 
-  // Gap badge component
+  // Gap badge component — thresholds: ≤10% ممتاز, ≤20% جيد, ≤30% مقبول, >30% ضعيف
+  const gapColor = (abs: number) =>
+    abs <= 10 ? 'bg-green-100 text-green-800' :
+    abs <= 20 ? 'bg-blue-100 text-blue-800' :
+    abs <= 30 ? 'bg-yellow-100 text-yellow-800' :
+    'bg-red-100 text-red-800'
+  const gapLabel = (abs: number) =>
+    abs <= 10 ? (ar ? 'ممتاز' : 'Excellent') :
+    abs <= 20 ? (ar ? 'جيد' : 'Good') :
+    abs <= 30 ? (ar ? 'مقبول' : 'Acceptable') :
+    (ar ? 'ضعيف' : 'Weak')
   const GapBadge = ({ gap }: { gap: number | null }) => {
     if (gap === null) return <span className="text-gray-400">—</span>
-    const color = Math.abs(gap) <= 5 ? 'bg-green-100 text-green-800' : Math.abs(gap) <= 15 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
-    return <span className={clsx('text-xs px-2 py-0.5 rounded-full font-mono font-bold', color)}>{gap > 0 ? `+${gap}%` : `${gap}%`}</span>
+    const abs = Math.abs(gap)
+    return (
+      <span className={clsx('text-xs px-2 py-0.5 rounded-full font-mono font-bold', gapColor(abs))}>
+        {gap > 0 ? `+${gap}%` : `${gap}%`} {gapLabel(abs)}
+      </span>
+    )
   }
 
   // ── Subject-level gap data (filtered) ──
@@ -958,10 +972,10 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
 
   // ── Per-grade cross-semester data ──
   const gradeData = useMemo(() => {
-    const grades = [...new Set([...allFormative.map(s => s.grade), ...allExam.map(s => s.grade)])].sort((a, b) => a - b)
+    const grades = [...new Set([...formativeScores.map(s => s.grade), ...examScores.map(s => s.grade)])].sort((a, b) => a - b)
     return grades.map(g => {
-      const fRec = allFormative.filter(s => s.grade === g)
-      const eRec = allExam.filter(s => s.grade === g)
+      const fRec = formativeScores.filter(s => s.grade === g)
+      const eRec = examScores.filter(s => s.grade === g)
       const fS1v = avg(fRec.map(s => s.s1)); const eS1v = avg(eRec.map(s => s.s1))
       const fS3v = avg(fRec.map(s => s.s3)); const eS3v = avg(eRec.map(s => s.s3))
       const s1Total = fS1v !== null && eS1v !== null ? pct(fS1v + eS1v, 35) : null
@@ -1046,7 +1060,7 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
                   <span className="text-sm text-gray-600">{ar ? 'الاختبار (من 25)' : 'Exam (/25)'}</span>
                   <span className="font-bold text-lg text-blue-700">{schoolAvg.es1Rate !== null ? `${schoolAvg.es1Rate}%` : '—'}</span>
                 </div>
-                <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: schoolAvg.gapS1 === null ? '#f3f4f6' : Math.abs(schoolAvg.gapS1) <= 5 ? '#f0fdf4' : Math.abs(schoolAvg.gapS1) <= 15 ? '#fffbeb' : '#fef2f2' }}>
+                <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: schoolAvg.gapS1 === null ? '#f3f4f6' : Math.abs(schoolAvg.gapS1) <= 10 ? '#f0fdf4' : Math.abs(schoolAvg.gapS1) <= 20 ? '#eff6ff' : Math.abs(schoolAvg.gapS1) <= 30 ? '#fffbeb' : '#fef2f2' }}>
                   <span className="text-sm font-semibold">{ar ? 'الفجوة (اختبار − تكويني)' : 'Gap (Exam − Formative)'}</span>
                   <GapBadge gap={schoolAvg.gapS1} />
                 </div>
@@ -1064,7 +1078,7 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
                   <span className="text-sm text-gray-600">{ar ? 'الاختبار (من 25)' : 'Exam (/25)'}</span>
                   <span className="font-bold text-lg text-blue-700">{schoolAvg.es3Rate !== null ? `${schoolAvg.es3Rate}%` : '—'}</span>
                 </div>
-                <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: schoolAvg.gapS3 === null ? '#f3f4f6' : Math.abs(schoolAvg.gapS3) <= 5 ? '#f0fdf4' : Math.abs(schoolAvg.gapS3) <= 15 ? '#fffbeb' : '#fef2f2' }}>
+                <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: schoolAvg.gapS3 === null ? '#f3f4f6' : Math.abs(schoolAvg.gapS3) <= 10 ? '#f0fdf4' : Math.abs(schoolAvg.gapS3) <= 20 ? '#eff6ff' : Math.abs(schoolAvg.gapS3) <= 30 ? '#fffbeb' : '#fef2f2' }}>
                   <span className="text-sm font-semibold">{ar ? 'الفجوة (اختبار − تكويني)' : 'Gap (Exam − Formative)'}</span>
                   <GapBadge gap={schoolAvg.gapS3} />
                 </div>
@@ -1192,7 +1206,7 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
                 { label: ar ? 'ف1 (إجمالي%)' : 'T1 Total%', value: schoolAvg.s1Total, color: '#2563eb' },
                 { label: ar ? 'ف2 (تكويني%)' : 'T2 Formative%', value: schoolAvg.s2Rate, color: '#d97706' },
                 { label: ar ? 'ف3 (إجمالي%)' : 'T3 Total%', value: schoolAvg.s3Total, color: '#16a34a' },
-                { label: ar ? 'الفجوة المتقاطعة' : 'Cross Gap', value: schoolAvg.crossGap, color: schoolAvg.crossGap === null ? '#6b7280' : Math.abs(schoolAvg.crossGap) <= 5 ? '#16a34a' : Math.abs(schoolAvg.crossGap) <= 15 ? '#d97706' : '#dc2626', isGap: true },
+                { label: ar ? 'الفجوة المتقاطعة' : 'Cross Gap', value: schoolAvg.crossGap, color: schoolAvg.crossGap === null ? '#6b7280' : Math.abs(schoolAvg.crossGap) <= 10 ? '#16a34a' : Math.abs(schoolAvg.crossGap) <= 20 ? '#2563eb' : Math.abs(schoolAvg.crossGap) <= 30 ? '#d97706' : '#dc2626', isGap: true },
               ].map((item, i) => (
                 <div key={i} className="rounded-xl p-4 text-center border" style={{ borderColor: item.color + '40', background: item.color + '10' }}>
                   <div className="text-xs text-gray-500 mb-1">{item.label}</div>
