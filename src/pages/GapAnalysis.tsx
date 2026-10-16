@@ -45,7 +45,7 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
     // Fall back to TermScore data (e.g. 2025-2026 with no annual Manhal file)
     if (yearId) {
       const termScores = dataStore.getTermScores(yearId)
-      if (termScores.length > 0) return computeSemesterGapsFromTermScores(termScores, { grade, track })
+      if (termScores.length > 0) return computeSemesterGapsFromTermScores(termScores, { grade })
     }
     return gaps
   }, [yearId, grade, track])

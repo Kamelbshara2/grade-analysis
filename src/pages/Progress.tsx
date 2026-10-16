@@ -80,11 +80,17 @@ export default function Progress({ lang }: ProgressProps) {
     // Anchor: students are identified by their grade in the LATEST (current) year.
     // Past years are searched without grade filter — students move up a grade each year.
     const latestYear = years[years.length - 1]
+    let groupIds: Set<string> | undefined
+    if (filter.studentGroup && latestYear) {
+      const groups = dataStore.getStudentGroups(latestYear)
+      groupIds = filter.studentGroup === 'returning' ? groups.returning : groups.newTransfer
+    }
     const latestFiltered = filterRecords(
       dataStore.getRecordsByYear(latestYear ?? ''),
-      { grade: filter.grade, section: filter.section, track: filter.track, nationality: filter.nationality }
+      { grade: filter.grade, section: filter.section, track: filter.track, nationality: filter.nationality },
+      groupIds
     )
-    const anchorIds = (filter.grade || filter.section)
+    const anchorIds = (filter.grade || filter.section || filter.studentGroup)
       ? new Set(latestFiltered.map(r => r.student.id))
       : undefined
 
@@ -93,7 +99,7 @@ export default function Progress({ lang }: ProgressProps) {
       records: dataStore.getRecordsByYear(yId), // unfiltered — anchor handles selection
     }))
     return computeMultiYearProgress(allYearRecords, subject, semester, anchorIds)
-  }, [view, years, subject, semester, filter.grade, filter.section, filter.track, filter.nationality])
+  }, [view, years, subject, semester, filter.grade, filter.section, filter.track, filter.nationality, filter.studentGroup])
 
   if (years.length === 0) {
     return <div className="card text-center py-12 text-gray-500">{t('no_data')}</div>

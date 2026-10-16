@@ -193,6 +193,7 @@ function classifyProgress(
   diff: number
 ): ProgressResult['category'] {
   if (diff > 4) return 'significant_progress'
+  if (diff > 0) return 'slight_progress'
   if (diff >= 0) return 'stable'
   return 'regression'
 }

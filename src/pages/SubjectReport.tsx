@@ -48,7 +48,12 @@ export default function SubjectReport({ lang }: SubjectReportProps) {
     const all = filter.yearId
       ? dataStore.getRecordsByYear(filter.yearId)
       : dataStore.getAllRecords()
-    return filterRecords(all, { grade: filter.grade, section: filter.section, track: filter.track })
+    let allowedIds: Set<string> | undefined
+    if (filter.studentGroup && filter.yearId) {
+      const groups = dataStore.getStudentGroups(filter.yearId)
+      allowedIds = filter.studentGroup === 'returning' ? groups.returning : groups.newTransfer
+    }
+    return filterRecords(all, { grade: filter.grade, section: filter.section, track: filter.track }, allowedIds)
   }, [filter])
 
   const cycle = useMemo(() => {
@@ -104,10 +109,10 @@ export default function SubjectReport({ lang }: SubjectReportProps) {
     if (g.length > 0) return g
     if (filter.yearId) {
       const termScores = dataStore.getTermScores(filter.yearId)
-      if (termScores.length > 0) return computeSemesterGapsFromTermScores(termScores, { grade: filter.grade })
+      if (termScores.length > 0) return computeSemesterGapsFromTermScores(termScores, { grade: filter.grade, section: filter.section })
     }
     return g
-  }, [records, filter.yearId, filter.grade])
+  }, [records, filter.yearId, filter.grade, filter.section])
 
   const subjectGap = gaps.find(g => g.subjectCode === subject) ?? null
 
@@ -159,7 +164,7 @@ export default function SubjectReport({ lang }: SubjectReportProps) {
               <div>
                 <h2 className="text-lg font-bold text-primary-700">{subjectLabel}</h2>
                 <p className="text-sm text-gray-500">
-                  {filter.yearId ?? ar ? 'كل الأعوام' : 'All Years'}
+                  {filter.yearId ?? (ar ? 'كل الأعوام' : 'All Years')}
                   {filter.grade ? ` · ${ar ? 'الصف' : 'Grade'} ${filter.grade}` : ''}
                   {filter.track ? ` · ${ar ? (filter.track === 'general' ? 'عام' : 'متقدم') : filter.track}` : ''}
                   {` · ${records.length} ${ar ? 'طالب' : 'students'}`}
