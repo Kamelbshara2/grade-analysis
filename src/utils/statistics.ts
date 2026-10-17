@@ -902,6 +902,127 @@ export function computeGradeStats(
   return result.sort((a, b) => a.grade - b.grade)
 }
 
+// ===== PROGRESS / REGRESSION RATES =====
+export interface SubjectProgressTrend {
+  subject: SubjectCode
+  subjectNameAr: string
+  subjectNameEn: string
+  transitions: Array<{
+    yearFrom: string
+    yearTo: string
+    total: number
+    improved: number
+    regressed: number
+    stable: number
+    improvedPct: number
+    regressedPct: number
+    meanDiff: number | null
+  }>
+  withinYear: {
+    yearId: string
+    s1ToS2: { total: number; improved: number; regressed: number }
+    s2ToS3: { total: number; improved: number; regressed: number }
+    s1ToS3: { total: number; improved: number; regressed: number }
+    meanS1S3Diff: number | null
+  } | null
+}
+
+function classifyDiff(baseline: number, current: number, diff: number): 'improved' | 'regressed' | 'stable' {
+  if (baseline >= 90) {
+    if (current < 86) return 'regressed'
+    if (diff > 4) return 'improved'
+    return 'stable'
+  }
+  if (diff > 4) return 'improved'
+  if (diff < -4) return 'regressed'
+  return 'stable'
+}
+
+export function computeProgressRates(
+  allYearRecords: { yearId: string; records: StudentRecord[] }[]
+): SubjectProgressTrend[] {
+  return ANALYSIS_SUBJECTS.map(subject => {
+    const labels = SUBJECT_LABELS[subject] ?? { ar: subject, en: subject }
+
+    // Year-to-year transitions (annual score comparison for paired students)
+    const transitions: SubjectProgressTrend['transitions'] = []
+    for (let i = 1; i < allYearRecords.length; i++) {
+      const prev = allYearRecords[i - 1]
+      const curr = allYearRecords[i]
+      const prevMap = new Map<string, number>()
+      for (const r of prev.records) {
+        if (!isSubjectRelevantForGrade(subject, r.grade)) continue
+        const g = r.grades[subject]
+        if (g?.annual !== null && g?.annual !== undefined) prevMap.set(r.student.id, g.annual)
+      }
+      let improved = 0, regressed = 0, stable = 0
+      const diffs: number[] = []
+      for (const r of curr.records) {
+        if (!isSubjectRelevantForGrade(subject, r.grade)) continue
+        const g = r.grades[subject]
+        if (g?.annual === null || g?.annual === undefined) continue
+        const prev = prevMap.get(r.student.id)
+        if (prev === undefined) continue
+        const diff = g.annual - prev
+        diffs.push(diff)
+        const cat = classifyDiff(prev, g.annual, diff)
+        if (cat === 'improved') improved++
+        else if (cat === 'regressed') regressed++
+        else stable++
+      }
+      const total = improved + regressed + stable
+      transitions.push({
+        yearFrom: prev.yearId,
+        yearTo: curr.yearId,
+        total,
+        improved,
+        regressed,
+        stable,
+        improvedPct: total > 0 ? round2((improved / total) * 100) : 0,
+        regressedPct: total > 0 ? round2((regressed / total) * 100) : 0,
+        meanDiff: diffs.length > 0 ? round2(diffs.reduce((a, b) => a + b, 0) / diffs.length) : null,
+      })
+    }
+
+    // Within-year (latest year, semester-to-semester)
+    let withinYear: SubjectProgressTrend['withinYear'] = null
+    if (allYearRecords.length > 0) {
+      const latest = allYearRecords[allYearRecords.length - 1]
+      const countSem = (fromKey: 's1' | 's2', toKey: 's2' | 's3') => {
+        let imp = 0, reg = 0, sta = 0
+        for (const r of latest.records) {
+          if (!isSubjectRelevantForGrade(subject, r.grade)) continue
+          const g = r.grades[subject]
+          if (!g) continue
+          const from = g[fromKey], to = g[toKey]
+          if (from === null || to === null) continue
+          const cat = classifyDiff(from, to, to - from)
+          if (cat === 'improved') imp++
+          else if (cat === 'regressed') reg++
+          else sta++
+        }
+        return { total: imp + reg + sta, improved: imp, regressed: reg }
+      }
+      const s1s3Diffs: number[] = []
+      for (const r of latest.records) {
+        if (!isSubjectRelevantForGrade(subject, r.grade)) continue
+        const g = r.grades[subject]
+        if (g?.s1 !== null && g?.s1 !== undefined && g?.s3 !== null && g?.s3 !== undefined)
+          s1s3Diffs.push(g.s3 - g.s1)
+      }
+      withinYear = {
+        yearId: latest.yearId,
+        s1ToS2: countSem('s1', 's2'),
+        s2ToS3: countSem('s2', 's3'),
+        s1ToS3: countSem('s1', 's3'),
+        meanS1S3Diff: s1s3Diffs.length > 0 ? round2(s1s3Diffs.reduce((a, b) => a + b, 0) / s1s3Diffs.length) : null,
+      }
+    }
+
+    return { subject, subjectNameAr: labels.ar, subjectNameEn: labels.en, transitions, withinYear }
+  })
+}
+
 // ===== FORMATIVE vs EXAM GAP =====
 export interface FormativeExamGap {
   subjectCode: SubjectCode
