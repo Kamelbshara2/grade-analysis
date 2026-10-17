@@ -2,38 +2,41 @@ import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { dataStore } from '@/store/dataStore'
 import { computeAchievementIndicators, computeGradeStats, round2 } from '@/utils/statistics'
-import { ANALYSIS_SUBJECTS, SUBJECT_LABELS, isSubjectRelevantForGrade } from '@/utils/subjectMapping'
-import type { Language, SubjectCode, Semester } from '@/types'
+import { ANALYSIS_SUBJECTS, SUBJECT_LABELS } from '@/utils/subjectMapping'
+import type { Language, SubjectCode, Cycle } from '@/types'
+import { getCycle, getPassMark } from '@/utils/subjectMapping'
 
 interface Props { lang: Language }
 
 type Section = 'school' | 'subject' | 'grade'
-type SemKey = 1 | 2 | 3 | 'annual'
 
 const LEVEL_COLORS: Record<string, string> = {
-  excellent: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-  very_good: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-  good: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
-  acceptable: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  weak: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  excellent:  'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+  very_good:  'bg-blue-100   text-blue-800   dark:bg-blue-900/30   dark:text-blue-300',
+  good:       'bg-sky-100    text-sky-800    dark:bg-sky-900/30    dark:text-sky-300',
+  acceptable: 'bg-amber-100  text-amber-800  dark:bg-amber-900/30  dark:text-amber-300',
+  weak:       'bg-red-100    text-red-800    dark:bg-red-900/30    dark:text-red-300',
 }
-
-const LEVEL_AR: Record<string, string> = { excellent: 'ممتاز', very_good: 'جيد جداً', good: 'جيد', acceptable: 'مقبول', weak: 'ضعيف' }
-const LEVEL_EN: Record<string, string> = { excellent: 'Excellent', very_good: 'Very Good', good: 'Good', acceptable: 'Acceptable', weak: 'Weak' }
+const LEVEL_AR: Record<string, string> = {
+  excellent: 'ممتاز', very_good: 'جيد جداً', good: 'جيد', acceptable: 'مقبول', weak: 'ضعيف',
+}
+const LEVEL_EN: Record<string, string> = {
+  excellent: 'Excellent', very_good: 'Very Good', good: 'Good', acceptable: 'Acceptable', weak: 'Weak',
+}
 
 function LevelBadge({ level, lang }: { level: string; lang: Language }) {
   const cls = LEVEL_COLORS[level] ?? 'bg-gray-100 text-gray-600'
-  const label = lang === 'ar' ? LEVEL_AR[level] : LEVEL_EN[level]
-  return <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${cls}`}>{label}</span>
+  const label = lang === 'ar' ? (LEVEL_AR[level] ?? level) : (LEVEL_EN[level] ?? level)
+  return <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${cls}`}>{label}</span>
 }
 
-function statRow(label: string, value: string | number) {
-  return (
-    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700 text-sm">
-      <span className="text-gray-500 dark:text-gray-400">{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
-  )
+/** Derive level from pass rate + above75 rate */
+function deriveLevel(passRate: number, above75Rate: number): string {
+  if (passRate < 75) return 'weak'
+  if (above75Rate >= 70) return 'excellent'
+  if (above75Rate >= 60) return 'very_good'
+  if (above75Rate >= 50) return 'good'
+  return 'acceptable'
 }
 
 export default function Standard11({ lang }: Props) {
@@ -44,103 +47,91 @@ export default function Standard11({ lang }: Props) {
 
   const records = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
 
-  const semKeys: SemKey[] = [1, 2, 3, 'annual']
-  const semLabel = (s: SemKey) => {
-    if (s === 'annual') return ar ? 'السنوي' : 'Annual'
-    return ar ? `الفصل ${s === 1 ? 'الأول' : s === 2 ? 'الثاني' : 'الثالث'}` : `S${s}`
-  }
+  const semLabel = (s: 1 | 2 | 3) => ar
+    ? `الفصل ${s === 1 ? 'الأول' : s === 2 ? 'الثاني' : 'الثالث'}`
+    : `Semester ${s}`
 
-  // ---- School section ----
-  const schoolData = useMemo(() => {
-    return semKeys.map(sem => {
-      const avgs: number[] = []
+  // ── School: per-semester stats (pass rate + above75 rate + level) ─────────
+  const schoolSemData = useMemo(() => {
+    return ([1, 2, 3] as const).map(sem => {
+      // Collect each student's average across subjects for this semester
+      const studentAvgs: number[] = []
       for (const r of records) {
+        const cycle: Cycle = getCycle(r.grade)
+        const passMark = getPassMark(cycle)
         const scores: number[] = []
         for (const subj of ANALYSIS_SUBJECTS) {
-          if (!isSubjectRelevantForGrade(subj, r.grade)) continue
           const g = r.grades[subj]
           if (!g) continue
-          const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : sem === 3 ? g.s3 : g.annual
+          const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
           if (score !== null) scores.push(score)
         }
-        if (scores.length > 0) avgs.push(scores.reduce((a, b) => a + b, 0) / scores.length)
+        if (scores.length > 0) {
+          studentAvgs.push(scores.reduce((a, b) => a + b, 0) / scores.length)
+        }
       }
-      const count = avgs.length
-      if (count === 0) return { sem, count: 0, mean: null, above75Rate: null, above90Rate: null, passRate: null, level: 'weak' as const }
-      const mean = round2(avgs.reduce((a, b) => a + b, 0) / count)
-      const above75Rate = round2((avgs.filter(s => s >= 75).length / count) * 100)
-      const above90Rate = round2((avgs.filter(s => s >= 90).length / count) * 100)
-      const passRate = round2((avgs.filter(s => s >= 50).length / count) * 100)
-      let level: string
-      if (passRate < 75) level = 'weak'
-      else if (above75Rate >= 70) level = 'excellent'
-      else if (above75Rate >= 60) level = 'very_good'
-      else if (above75Rate >= 50) level = 'good'
-      else level = 'acceptable'
-      return { sem, count, mean, above75Rate, above90Rate, passRate, level }
+      const count = studentAvgs.length
+      if (count === 0) return { sem, count: 0, passRate: 0, above75Rate: 0, level: 'weak' }
+      // Use cycle-aware pass mark (student average determines pass)
+      const cycle: Cycle = records.length > 0 ? getCycle(records[0].grade) : 3
+      const passMark = getPassMark(cycle)
+      const passRate = round2((studentAvgs.filter(s => s >= passMark).length / count) * 100)
+      const above75Rate = round2((studentAvgs.filter(s => s >= 75).length / count) * 100)
+      return { sem, count, passRate, above75Rate, level: deriveLevel(passRate, above75Rate) }
     })
   }, [records])
 
-  // ---- Subject section ----
-  const subjectData = useMemo(() => {
+  // ── Subject: annual stats for all 9 subjects (regardless of grade filter) ──
+  const subjectAnnualData = useMemo(() => {
+    // For each subject, compute indicators from all records that have any data for it
     return ANALYSIS_SUBJECTS.map(subj => {
-      const cells = semKeys.map(sem => {
-        const indics = computeAchievementIndicators(
-          records.filter(r => isSubjectRelevantForGrade(subj, r.grade)),
-          sem === 'annual' ? 'annual' : sem as Semester
-        ).find(i => i.subjectCode === subj)
-        return indics ?? null
-      })
-      return { subj, cells }
+      // Get records that have this subject (some grades won't have bio/chem/physics)
+      const relevantRecords = records.filter(r => r.grades[subj] != null)
+      if (relevantRecords.length === 0) return { subj, passRate: null, above75Rate: null, level: null, count: 0 }
+      const indicators = computeAchievementIndicators(relevantRecords, 'annual')
+      const ind = indicators.find(i => i.subjectCode === subj)
+      if (!ind) return { subj, passRate: null, above75Rate: null, level: null, count: 0 }
+      return { subj, passRate: ind.passRate, above75Rate: ind.above75Rate, level: ind.level, count: ind.totalStudents }
     })
   }, [records])
 
-  // ---- Grade section ----
-  const gradeData = useMemo(() => {
-    return semKeys.map(sem => {
-      const stats = computeGradeStats(records, sem === 'annual' ? 'annual' : sem as Semester)
-      return { sem, stats }
-    })
-  }, [records])
-
-  const grades = useMemo(() => {
-    const gs = [...new Set(records.map(r => r.grade))].sort((a, b) => a - b)
+  // ── Grade: annual stats per grade ─────────────────────────────────────────
+  const gradeAnnualData = useMemo(() => {
+    const gs = computeGradeStats(records, 'annual')
     return gs
   }, [records])
 
+  // Chart data: subjects, annual pass rate + above75
   const chartData = useMemo(() => {
-    return ANALYSIS_SUBJECTS.map(subj => {
-      const annual = computeAchievementIndicators(
-        records.filter(r => isSubjectRelevantForGrade(subj, r.grade)),
-        'annual'
-      ).find(i => i.subjectCode === subj)
-      return {
-        name: ar ? SUBJECT_LABELS[subj].ar : SUBJECT_LABELS[subj].en,
-        mean: annual?.mean ?? 0,
-        above75Rate: annual?.above75Rate ?? 0,
-        passRate: annual?.passRate ?? 0,
-      }
-    })
-  }, [records, ar])
-
-  if (!yearId) return <div className="p-8 text-center text-gray-500">{ar ? 'لا توجد بيانات' : 'No data available'}</div>
+    return subjectAnnualData
+      .filter(d => d.passRate !== null)
+      .map(d => ({
+        name: ar ? SUBJECT_LABELS[d.subj as SubjectCode].ar : SUBJECT_LABELS[d.subj as SubjectCode].en,
+        [ar ? 'نسبة النجاح' : 'Pass Rate']: d.passRate ?? 0,
+        [ar ? 'فوق 75%' : 'Above 75%']: d.above75Rate ?? 0,
+      }))
+  }, [subjectAnnualData, ar])
 
   const tabs: { key: Section; ar: string; en: string }[] = [
-    { key: 'school', ar: 'المدرسة', en: 'School' },
-    { key: 'subject', ar: 'المواد', en: 'Subjects' },
-    { key: 'grade', ar: 'الصفوف', en: 'Grades' },
+    { key: 'school',  ar: 'المدرسة', en: 'School' },
+    { key: 'subject', ar: 'المواد',  en: 'Subjects' },
+    { key: 'grade',   ar: 'الصفوف', en: 'Grades' },
   ]
+
+  if (!yearId) return (
+    <div className="p-8 text-center text-gray-500">{ar ? 'لا توجد بيانات' : 'No data available'}</div>
+  )
 
   return (
     <div className="p-6 space-y-6" dir={ar ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             {ar ? 'معيار 1.1 — التحصيل الأكاديمي' : 'Standard 1.1 — Academic Achievement'}
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {ar ? 'المواد الأساسية التسع — فصول دراسية ودرجة سنوية' : 'Core 9 subjects — semesters and annual grade'}
+            {ar ? 'المواد الأساسية التسع — فصول دراسية ودرجة سنوية' : '9 core subjects — semesters & annual grade'}
           </p>
         </div>
         <select
@@ -152,21 +143,20 @@ export default function Standard11({ lang }: Props) {
         </select>
       </div>
 
-      {/* Summary chart */}
+      {/* Summary bar chart */}
       <div className="card p-4">
         <h2 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-3">
-          {ar ? 'الدرجة السنوية للمواد الأساسية' : 'Annual Scores — Core Subjects'}
+          {ar ? 'النسب السنوية للمواد الأساسية' : 'Annual Rates — Core Subjects'}
         </h2>
         <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 40 }}>
+          <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
-            <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v: number) => v.toFixed(1)} />
+            <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} />
+            <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="mean" name={ar ? 'المتوسط' : 'Mean'} fill="#6366f1" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="above75Rate" name={ar ? '% فوق 75' : '% Above 75'} fill="#22c55e" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="passRate" name={ar ? '% نجاح' : '% Pass'} fill="#f59e0b" radius={[3, 3, 0, 0]} />
+            <Bar dataKey={ar ? 'نسبة النجاح' : 'Pass Rate'} fill="#f59e0b" radius={[3, 3, 0, 0]} />
+            <Bar dataKey={ar ? 'فوق 75%' : 'Above 75%'} fill="#22c55e" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -180,7 +170,7 @@ export default function Standard11({ lang }: Props) {
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               section === tab.key
                 ? 'border-b-2 border-primary-600 text-primary-700 dark:text-primary-400'
-                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
             }`}
           >
             {ar ? tab.ar : tab.en}
@@ -188,71 +178,72 @@ export default function Standard11({ lang }: Props) {
         ))}
       </div>
 
-      {/* School section */}
+      {/* ── School ── */}
       {section === 'school' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {schoolData.map(({ sem, count, mean, above75Rate, above90Rate, passRate, level }) => (
-              <div key={String(sem)} className="card p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-sm">{semLabel(sem)}</span>
-                  <LevelBadge level={level} lang={lang} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {schoolSemData.map(({ sem, count, passRate, above75Rate, level }) => (
+            <div key={sem} className="card p-5 space-y-4">
+              {/* Semester label + badge */}
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-base text-gray-800 dark:text-gray-100">{semLabel(sem)}</span>
+                <LevelBadge level={level} lang={lang} />
+              </div>
+              {/* Two rates */}
+              <div className="space-y-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-gray-400">{ar ? 'نسبة النجاح' : 'Pass Rate'}</span>
+                  <span className="text-3xl font-bold text-amber-500">{passRate.toFixed(1)}%</span>
+                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                    <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${Math.min(passRate, 100)}%` }} />
+                  </div>
                 </div>
-                <div className="text-3xl font-bold text-primary-600 dark:text-primary-400">
-                  {mean !== null ? mean.toFixed(1) : '—'}
-                </div>
-                <div className="space-y-1">
-                  {statRow(ar ? 'عدد الطلاب' : 'Students', count)}
-                  {statRow(ar ? '% فوق 75' : '% Above 75', above75Rate !== null ? `${above75Rate.toFixed(1)}%` : '—')}
-                  {statRow(ar ? '% فوق 90' : '% Above 90', above90Rate !== null ? `${above90Rate.toFixed(1)}%` : '—')}
-                  {statRow(ar ? '% نجاح' : '% Pass', passRate !== null ? `${passRate.toFixed(1)}%` : '—')}
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-gray-400">{ar ? 'نسبة فوق 75' : 'Above 75%'}</span>
+                  <span className="text-3xl font-bold text-emerald-500">{above75Rate.toFixed(1)}%</span>
+                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                    <div className="bg-emerald-400 h-1.5 rounded-full" style={{ width: `${Math.min(above75Rate, 100)}%` }} />
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+              <p className="text-xs text-gray-400 text-end">{count} {ar ? 'طالب' : 'students'}</p>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Subject section */}
+      {/* ── Subject ── annual only: pass rate + above75 + level ── */}
       {section === 'subject' && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 dark:bg-gray-800">
-                <th className="px-3 py-2 text-start font-semibold">{ar ? 'المادة' : 'Subject'}</th>
-                {semKeys.map(sem => (
-                  <th key={String(sem)} className="px-3 py-2 text-center font-semibold" colSpan={2}>
-                    {semLabel(sem)}
-                  </th>
-                ))}
-              </tr>
-              <tr className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500">
-                <th className="px-3 py-1"></th>
-                {semKeys.map(sem => (
-                  <th key={`${sem}-a`} className="px-2 py-1 text-center">{ar ? 'متوسط' : 'Mean'}</th>
-                )).concat(
-                  semKeys.map(sem => (
-                    <th key={`${sem}-b`} className="px-2 py-1 text-center">{ar ? 'مستوى' : 'Level'}</th>
-                  ))
-                )}
+              <tr className="bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                <th className="px-4 py-3 text-start font-semibold">{ar ? 'المادة' : 'Subject'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'عدد الطلاب' : 'Students'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'نسبة النجاح' : 'Pass Rate'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'نسبة فوق 75' : 'Above 75%'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'المستوى' : 'Level'}</th>
               </tr>
             </thead>
             <tbody>
-              {subjectData.map(({ subj, cells }) => (
+              {subjectAnnualData.map(({ subj, count, passRate, above75Rate, level }) => (
                 <tr key={subj} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                  <td className="px-3 py-2 font-medium">
+                  <td className="px-4 py-3 font-medium">
                     {ar ? SUBJECT_LABELS[subj as SubjectCode].ar : SUBJECT_LABELS[subj as SubjectCode].en}
                   </td>
-                  {cells.map((cell, i) => (
-                    <td key={`${String(semKeys[i])}-mean`} className="px-2 py-2 text-center">
-                      {cell ? cell.mean.toFixed(1) : '—'}
-                    </td>
-                  ))}
-                  {cells.map((cell, i) => (
-                    <td key={`${String(semKeys[i])}-lvl`} className="px-2 py-2 text-center">
-                      {cell ? <LevelBadge level={cell.level} lang={lang} /> : '—'}
-                    </td>
-                  ))}
+                  <td className="px-4 py-3 text-center text-gray-500">{count > 0 ? count : '—'}</td>
+                  <td className="px-4 py-3 text-center">
+                    {passRate !== null
+                      ? <span className="font-bold text-amber-600">{passRate.toFixed(1)}%</span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {above75Rate !== null
+                      ? <span className="font-bold text-emerald-600">{above75Rate.toFixed(1)}%</span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {level ? <LevelBadge level={level} lang={lang} /> : <span className="text-gray-300">—</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -260,40 +251,33 @@ export default function Standard11({ lang }: Props) {
         </div>
       )}
 
-      {/* Grade section */}
+      {/* ── Grade ── annual only: pass rate + above75 + level ── */}
       {section === 'grade' && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 dark:bg-gray-800">
-                <th className="px-3 py-2 text-start font-semibold">{ar ? 'الصف' : 'Grade'}</th>
-                {semKeys.map(sem => (
-                  <th key={String(sem)} className="px-3 py-2 text-center font-semibold" colSpan={3}>
-                    {semLabel(sem)}
-                  </th>
-                ))}
-              </tr>
-              <tr className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500">
-                <th className="px-3 py-1"></th>
-                {semKeys.flatMap(sem => [
-                  <th key={`${sem}-m`} className="px-2 py-1 text-center">{ar ? 'متوسط' : 'Mean'}</th>,
-                  <th key={`${sem}-p`} className="px-2 py-1 text-center">{ar ? '%75+' : '%75+'}</th>,
-                  <th key={`${sem}-l`} className="px-2 py-1 text-center">{ar ? 'مستوى' : 'Level'}</th>,
-                ])}
+              <tr className="bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                <th className="px-4 py-3 text-start font-semibold">{ar ? 'الصف' : 'Grade'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'عدد الطلاب' : 'Students'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'نسبة النجاح' : 'Pass Rate'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'نسبة فوق 75' : 'Above 75%'}</th>
+                <th className="px-4 py-3 text-center font-semibold">{ar ? 'المستوى' : 'Level'}</th>
               </tr>
             </thead>
             <tbody>
-              {grades.map(grade => (
-                <tr key={grade} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                  <td className="px-3 py-2 font-medium">{ar ? `الصف ${grade}` : `Grade ${grade}`}</td>
-                  {gradeData.flatMap(({ sem, stats }) => {
-                    const gs = stats.find(s => s.grade === grade)
-                    return [
-                      <td key={`${String(sem)}-m`} className="px-2 py-2 text-center">{gs ? gs.mean.toFixed(1) : '—'}</td>,
-                      <td key={`${String(sem)}-p`} className="px-2 py-2 text-center">{gs ? `${gs.above75Rate.toFixed(0)}%` : '—'}</td>,
-                      <td key={`${String(sem)}-l`} className="px-2 py-2 text-center">{gs ? <LevelBadge level={gs.level} lang={lang} /> : '—'}</td>,
-                    ]
-                  })}
+              {gradeAnnualData.map(gs => (
+                <tr key={gs.grade} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                  <td className="px-4 py-3 font-bold">{ar ? `الصف ${gs.grade}` : `Grade ${gs.grade}`}</td>
+                  <td className="px-4 py-3 text-center text-gray-500">{gs.count}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="font-bold text-amber-600">{gs.passRate.toFixed(1)}%</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="font-bold text-emerald-600">{gs.above75Rate.toFixed(1)}%</span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <LevelBadge level={gs.level} lang={lang} />
+                  </td>
                 </tr>
               ))}
             </tbody>
