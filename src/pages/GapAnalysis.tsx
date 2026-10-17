@@ -90,14 +90,17 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
   const { gapRows, schoolSummary } = useMemo(() => {
     let fScores = dataStore.getFormativeScores(yearId)
     let eScores = dataStore.getExamScores(yearId)
+    let records = dataStore.getRecordsByYear(yearId)
 
     if (grade !== undefined) {
       fScores = fScores.filter(s => s.grade === grade)
       eScores = eScores.filter(s => s.grade === grade)
+      records = records.filter(r => r.grade === grade)
     }
     if (section) {
       fScores = fScores.filter(s => s.section === section)
       eScores = eScores.filter(s => s.section === section)
+      records = records.filter(r => r.section === section)
     }
 
     const codes = [...new Set([
@@ -114,34 +117,37 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
       const fRecs = fScores.filter(s => s.subjectCode === code)
       const eRecs = eScores.filter(s => s.subjectCode === code)
 
+      // All scores are stored as /100 — no weight conversion needed
       const fs1 = avg(fRecs.map(s => s.s1))
       const es1 = avg(eRecs.map(s => s.s1))
       const fs2 = avg(fRecs.map(s => s.s2 ?? null))
       const fs3 = avg(fRecs.map(s => s.s3))
       const es3 = avg(eRecs.map(s => s.s3))
 
-      // Convert raw scores → /100 (weights hidden from UI)
-      const fs1Rate = fs1 !== null ? round2(fs1 / 10 * 100) : null   // formative out of 10
-      const es1Rate = es1 !== null ? round2(es1 / 25 * 100) : null   // exam out of 25
+      const fs1Rate = fs1
+      const es1Rate = es1
       const internalGap1 = fs1Rate !== null && es1Rate !== null ? round2(es1Rate - fs1Rate) : null
 
-      const s2Rate = fs2 !== null ? round2(fs2 / 30 * 100) : null    // S2 teacher out of 30
+      const s2Rate = fs2
 
-      const fs3Rate = fs3 !== null ? round2(fs3 / 10 * 100) : null
-      const es3Rate = es3 !== null ? round2(es3 / 25 * 100) : null
+      const fs3Rate = fs3
+      const es3Rate = es3
       const internalGap3 = fs3Rate !== null && es3Rate !== null ? round2(es3Rate - fs3Rate) : null
 
-      // S1 total: (formative10 + exam25) / 35 × 100
-      const s1TotalRate = (fs1 !== null && es1 !== null) ? round2((fs1 + es1) / 35 * 100) : null
-      const s3TotalRate = (fs3 !== null && es3 !== null) ? round2((fs3 + es3) / 35 * 100) : null
+      // Cross-semester: use semester totals from StudentRecord (already /100)
+      const subjectRecords = records.filter(r => r.grades[code])
+      const s1TotalRate = avg(subjectRecords.map(r => r.grades[code]?.s1 ?? null))
+      const s2TotalRate = avg(subjectRecords.map(r => r.grades[code]?.s2 ?? null))
+      const s3TotalRate = avg(subjectRecords.map(r => r.grades[code]?.s3 ?? null))
+      const crossS2Rate = s2TotalRate ?? s2Rate
 
       let crossGap: number | null = null
-      if (s2Rate !== null && s1TotalRate !== null && s3TotalRate !== null) {
-        crossGap = round2(s2Rate - (s1TotalRate + s3TotalRate) / 2)
-      } else if (s2Rate !== null && s1TotalRate !== null) {
-        crossGap = round2(s2Rate - s1TotalRate)
-      } else if (s2Rate !== null && s3TotalRate !== null) {
-        crossGap = round2(s2Rate - s3TotalRate)
+      if (crossS2Rate !== null && s1TotalRate !== null && s3TotalRate !== null) {
+        crossGap = round2(crossS2Rate - (s1TotalRate + s3TotalRate) / 2)
+      } else if (crossS2Rate !== null && s1TotalRate !== null) {
+        crossGap = round2(crossS2Rate - s1TotalRate)
+      } else if (crossS2Rate !== null && s3TotalRate !== null) {
+        crossGap = round2(crossS2Rate - s3TotalRate)
       }
 
       return {
@@ -149,30 +155,27 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
         subject: SUBJECT_LABELS[code]?.ar ?? code,
         subjectEn: SUBJECT_LABELS[code]?.en ?? code,
         fs1Rate, es1Rate, internalGap1,
-        s2Rate,
+        s2Rate: crossS2Rate,
         fs3Rate, es3Rate, internalGap3,
-        s1TotalRate, s3TotalRate, crossGap,
+        s1TotalRate: s1TotalRate ?? null,
+        s3TotalRate: s3TotalRate ?? null,
+        crossGap,
       }
     }).filter(r =>
       r.fs1Rate !== null || r.es1Rate !== null || r.s2Rate !== null ||
       r.fs3Rate !== null || r.es3Rate !== null
     )
 
-    // School-wide summary (unfiltered, converted to /100)
+    // School-wide summary (unfiltered) — all scores already /100
     const allFS = dataStore.getFormativeScores(yearId)
     const allES = dataStore.getExamScores(yearId)
-    const sfAllF1 = allFS.map(s => s.s1 !== null ? s.s1 / 10 * 100 : null)
-    const sfAllE1 = allES.map(s => s.s1 !== null ? s.s1 / 25 * 100 : null)
-    const sfAllF2 = allFS.map(s => s.s2 !== null ? s.s2 / 30 * 100 : null)
-    const sfAllF3 = allFS.map(s => s.s3 !== null ? s.s3 / 10 * 100 : null)
-    const sfAllE3 = allES.map(s => s.s3 !== null ? s.s3 / 25 * 100 : null)
 
     const schoolSummary = {
-      avgFormS1: avg(sfAllF1),
-      avgExamS1: avg(sfAllE1),
-      avgTeachS2: avg(sfAllF2),
-      avgFormS3: avg(sfAllF3),
-      avgExamS3: avg(sfAllE3),
+      avgFormS1: avg(allFS.map(s => s.s1)),
+      avgExamS1: avg(allES.map(s => s.s1)),
+      avgTeachS2: avg(allFS.map(s => s.s2 ?? null)),
+      avgFormS3: avg(allFS.map(s => s.s3)),
+      avgExamS3: avg(allES.map(s => s.s3)),
     }
 
     return { gapRows: rows, schoolSummary }
@@ -225,8 +228,8 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
           <h1 className="text-xl font-bold">{ar ? 'تحليل الفجوات التقييمية' : 'Assessment Gap Analysis'}</h1>
           <p className="text-xs text-gray-500 mt-0.5">
             {ar
-              ? 'الدرجات من 100 — الأوزان الداخلية (10/25/30/35) مستخدمة في الحساب'
-              : 'Scores shown out of 100 — internal weights (10/25/30/35) used in calculations'}
+              ? 'جميع الدرجات من 100'
+              : 'All scores out of 100'}
           </p>
         </div>
         <button className="btn-primary flex items-center gap-2 text-sm no-print" onClick={() => window.print()}>
@@ -324,8 +327,8 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
             <div className="p-3 rounded-xl text-xs text-gray-600 dark:text-gray-400"
               style={{ background: '#eff6ff', borderRight: `4px solid ${C.s1}` }}>
               {ar
-                ? 'يقارن التكويني (10 درجات) بالاختبار (25 درجة) بعد تحويلهما إلى نسبة من 100. فجوة موجبة = أداء أفضل في الاختبار. الفجوة المقبولة ≤5 نقاط.'
-                : 'Compares formative (10 pts) vs exam (25 pts) converted to /100. Positive gap = better exam performance. Acceptable gap ≤5 pts.'}
+                ? 'يقارن درجة التكويني بدرجة الاختبار (كلاهما من 100). فجوة موجبة = أداء أفضل في الاختبار. الفجوة المقبولة ≤5 نقاط.'
+                : 'Compares formative vs exam scores (both out of 100). Positive gap = better exam performance. Acceptable gap ≤5 pts.'}
             </div>
             <div className="card">
               <p className="text-xs font-semibold text-gray-500 mb-3">
@@ -415,8 +418,8 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
             <div className="p-3 rounded-xl text-xs text-gray-600 dark:text-gray-400"
               style={{ background: '#f5f3ff', borderRight: `4px solid ${C.s3}` }}>
               {ar
-                ? 'يقارن الفصل الثاني (30 درجة → /100) بمتوسط مجموعَي الفصل الأول والثالث (كل منهما 35 درجة → /100). فجوة موجبة = الفصل الثاني أعلى.'
-                : 'Compares S2 (30 pts → /100) against the average of S1 and S3 totals (35 pts each → /100). Positive = S2 higher.'}
+                ? 'يقارن درجة الفصل الثاني بمتوسط درجتَي الفصل الأول والثالث (جميعها من 100). فجوة موجبة = الفصل الثاني أعلى.'
+                : 'Compares S2 against the average of S1 and S3 semester totals (all out of 100). Positive = S2 higher.'}
             </div>
             <div className="card">
               <p className="text-xs font-semibold text-gray-500 mb-3">
