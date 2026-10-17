@@ -83,9 +83,11 @@ export default function Standard13({ lang }: Props) {
     const avgS1 = valid.reduce((a, b) => a + (b.avgS1 ?? 0), 0) / valid.length
     const avgS2 = valid.reduce((a, b) => a + (b.avgS2 ?? 0), 0) / valid.length
     const avgS3 = valid.reduce((a, b) => a + (b.avgS3 ?? 0), 0) / valid.length
-    const gapS1S2 = avgS1 !== 0 ? round2((avgS2 - avgS1) / avgS1 * 100) : 0
-    const gapS2S3 = avgS2 !== 0 ? round2((avgS3 - avgS2) / avgS2 * 100) : 0
-    const gapS1S3 = avgS1 !== 0 ? round2((avgS3 - avgS1) / avgS1 * 100) : 0
+    const avgAnnual = valid.filter(g => g.avgAnnual !== null).reduce((a, b) => a + (b.avgAnnual ?? 0), 0) / valid.length
+    // gap% = (new - old) / annual * 100 — consistent with computeSemesterGaps
+    const gapS1S2 = avgAnnual !== 0 ? round2((avgS2 - avgS1) / avgAnnual * 100) : 0
+    const gapS2S3 = avgAnnual !== 0 ? round2((avgS3 - avgS2) / avgAnnual * 100) : 0
+    const gapS1S3 = avgAnnual !== 0 ? round2((avgS3 - avgS1) / avgAnnual * 100) : 0
     return { avgS1, avgS2, avgS3, gapS1S2, gapS2S3, gapS1S3 }
   }, [semGaps])
 

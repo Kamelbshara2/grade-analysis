@@ -692,10 +692,10 @@ export function computeSemesterGaps(
     const avgS3 = avg(s3s)
     const avgAnnual = avg(annuals)
 
-    // gap% = (new - old) / old * 100  (positive = زيادة, negative = نقصان)
-    const gapS1S3 = (avgS1 !== null && avgS3 !== null && avgS1 !== 0) ? round2((avgS3 - avgS1) / avgS1 * 100) : null
-    const gapS1S2 = (avgS1 !== null && avgS2 !== null && avgS1 !== 0) ? round2((avgS2 - avgS1) / avgS1 * 100) : null
-    const gapS2S3 = (avgS2 !== null && avgS3 !== null && avgS2 !== 0) ? round2((avgS3 - avgS2) / avgS2 * 100) : null
+    // gap% = (new - old) / annual * 100  — denominator is annual score (all semesters out of 100)
+    const gapS1S3 = (avgS1 !== null && avgS3 !== null && avgAnnual !== null && avgAnnual !== 0) ? round2((avgS3 - avgS1) / avgAnnual * 100) : null
+    const gapS1S2 = (avgS1 !== null && avgS2 !== null && avgAnnual !== null && avgAnnual !== 0) ? round2((avgS2 - avgS1) / avgAnnual * 100) : null
+    const gapS2S3 = (avgS2 !== null && avgS3 !== null && avgAnnual !== null && avgAnnual !== 0) ? round2((avgS3 - avgS2) / avgAnnual * 100) : null
 
     // Per-student drop/gain analysis (s3 vs s1)
     const pairedStudents = records.filter(r => {
