@@ -2,7 +2,7 @@ import type {
   StudentRecord, SubjectCode, SubjectStats, ProgressResult,
   Cycle, Semester, AnalysisFilter, Nationality, SubjectGrade
 } from '@/types'
-import { getPassMark, getCycle, SUBJECT_LABELS } from './subjectMapping'
+import { getPassMark, getCycle, SUBJECT_LABELS, ANALYSIS_SUBJECTS } from './subjectMapping'
 
 // ===== FILTER =====
 export function filterRecords(
@@ -189,13 +189,19 @@ export function computeProgress(
 }
 
 function classifyProgress(
-  _baseline: number,
-  _current: number,
+  baseline: number,
+  current: number,
   diff: number
 ): ProgressResult['category'] {
+  // For students above 90: only regression when they drop below 86 (4-point buffer below 90)
+  if (baseline >= 90) {
+    if (current < 86) return 'regression'
+    if (diff > 4) return 'significant_progress'
+    return 'stable'
+  }
   if (diff > 4) return 'significant_progress'
-  if (diff >= 0) return 'stable'
-  return 'regression'
+  if (diff < -4) return 'regression'
+  return 'stable'
 }
 
 // ===== PROGRESS COMPARISON BETWEEN SEMESTERS =====
@@ -501,7 +507,7 @@ export function computeSchoolStats(
   const studentAvgs: number[] = []
   for (const r of records) {
     const scores: number[] = []
-    for (const subject of Object.keys(r.grades) as SubjectCode[]) {
+    for (const subject of ANALYSIS_SUBJECTS) {
       const g = r.grades[subject]
       if (!g) continue
       let score: number | null = null

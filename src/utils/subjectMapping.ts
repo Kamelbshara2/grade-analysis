@@ -68,11 +68,25 @@ export const CYCLE2_SUBJECTS: SubjectCode[] = [
 
 export const CYCLE3_SUBJECTS: SubjectCode[] = [
   'arabic', 'english', 'math', 'islamic', 'social',
-  'science', 'physics', 'chemistry', 'biology', 'health_science',
+  'physics', 'chemistry', 'biology',
+]
+
+// All subjects used in analysis (no health_science)
+export const ANALYSIS_SUBJECTS: SubjectCode[] = [
+  'arabic', 'islamic', 'social', 'math', 'english',
+  'science', 'biology', 'chemistry', 'physics',
 ]
 
 export function getCycleSubjects(cycle: Cycle): SubjectCode[] {
   return cycle === 2 ? CYCLE2_SUBJECTS : CYCLE3_SUBJECTS
+}
+
+// Returns true if a subject is relevant for a given grade
+export function isSubjectRelevantForGrade(subject: SubjectCode, grade: number): boolean {
+  if (subject === 'science') return grade <= 10   // grades 5-8, 9-10 general
+  if (subject === 'biology' || subject === 'chemistry' || subject === 'physics') return grade >= 9
+  if (subject === 'health_science') return false  // excluded from all analysis
+  return true
 }
 
 export function getPassMark(cycle: Cycle): number {
