@@ -1,8 +1,9 @@
 import type {
   StudentRecord, SubjectCode, SubjectStats, ProgressResult,
-  Cycle, Semester, AnalysisFilter, Nationality, SubjectGrade
+  Cycle, Semester, AnalysisFilter, Nationality, SubjectGrade,
+  FormativeScore, ExamScore,
 } from '@/types'
-import { getPassMark, getCycle, SUBJECT_LABELS, ANALYSIS_SUBJECTS } from './subjectMapping'
+import { getPassMark, getCycle, SUBJECT_LABELS, ANALYSIS_SUBJECTS, isSubjectRelevantForGrade } from './subjectMapping'
 
 // ===== FILTER =====
 export function filterRecords(
@@ -738,4 +739,240 @@ export function computeSemesterGaps(
       priority,
     }
   }).sort((a, b) => (a.gapS1S3 ?? 0) - (b.gapS1S3 ?? 0))
+}
+
+// ===== SEMESTER TREND POINTS (for multi-year / within-year charts) =====
+export interface SemesterPoint {
+  label: string       // e.g. "ف1 23-24"
+  labelEn: string     // e.g. "S1 23-24"
+  yearId: string
+  semester: 1 | 2 | 3
+  mean: number | null
+  count: number
+  stdDev: number | null
+  passRate: number | null
+  above75Rate: number | null
+  above90Rate: number | null
+  passMark: number
+}
+
+function shortYear(yearId: string): string {
+  const parts = yearId.split('-')
+  if (parts.length === 2) return `${parts[0].slice(-2)}-${parts[1].slice(-2)}`
+  return yearId
+}
+
+export function computeSchoolTrendPoints(
+  allYearRecords: { yearId: string; records: StudentRecord[] }[]
+): SemesterPoint[] {
+  const points: SemesterPoint[] = []
+  for (const { yearId, records } of allYearRecords) {
+    for (const sem of [1, 2, 3] as const) {
+      const studentAvgs: number[] = []
+      const cycle: Cycle = records[0]?.cycle ?? 2
+      const passMark = getPassMark(cycle)
+      for (const r of records) {
+        const scores: number[] = []
+        for (const subject of ANALYSIS_SUBJECTS) {
+          if (!isSubjectRelevantForGrade(subject, r.grade)) continue
+          const g = r.grades[subject]
+          if (!g) continue
+          const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
+          if (score !== null) scores.push(score)
+        }
+        if (scores.length > 0) studentAvgs.push(scores.reduce((a, b) => a + b, 0) / scores.length)
+      }
+      const count = studentAvgs.length
+      if (count === 0) {
+        points.push({ label: `ف${sem} ${shortYear(yearId)}`, labelEn: `S${sem} ${shortYear(yearId)}`, yearId, semester: sem, mean: null, count: 0, stdDev: null, passRate: null, above75Rate: null, above90Rate: null, passMark })
+        continue
+      }
+      const mean = round2(studentAvgs.reduce((a, b) => a + b, 0) / count)
+      const variance = studentAvgs.reduce((s, x) => s + (x - mean) ** 2, 0) / count
+      points.push({
+        label: `ف${sem} ${shortYear(yearId)}`,
+        labelEn: `S${sem} ${shortYear(yearId)}`,
+        yearId, semester: sem, count, mean,
+        stdDev: round2(Math.sqrt(variance)),
+        passRate: round2((studentAvgs.filter(s => s >= passMark).length / count) * 100),
+        above75Rate: round2((studentAvgs.filter(s => s >= 75).length / count) * 100),
+        above90Rate: round2((studentAvgs.filter(s => s >= 90).length / count) * 100),
+        passMark,
+      })
+    }
+  }
+  return points
+}
+
+export function computeSubjectTrendPoints(
+  allYearRecords: { yearId: string; records: StudentRecord[] }[],
+  subject: SubjectCode
+): SemesterPoint[] {
+  const points: SemesterPoint[] = []
+  for (const { yearId, records } of allYearRecords) {
+    const rel = records.filter(r => isSubjectRelevantForGrade(subject, r.grade))
+    for (const sem of [1, 2, 3] as const) {
+      const scores: number[] = []
+      const cycle: Cycle = rel.find(r => r.grades[subject])?.cycle ?? 2
+      const passMark = getPassMark(cycle)
+      for (const r of rel) {
+        const g = r.grades[subject]
+        if (!g) continue
+        const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
+        if (score !== null) scores.push(score)
+      }
+      const count = scores.length
+      if (count === 0) {
+        points.push({ label: `ف${sem} ${shortYear(yearId)}`, labelEn: `S${sem} ${shortYear(yearId)}`, yearId, semester: sem, mean: null, count: 0, stdDev: null, passRate: null, above75Rate: null, above90Rate: null, passMark })
+        continue
+      }
+      const mean = round2(scores.reduce((a, b) => a + b, 0) / count)
+      const variance = scores.reduce((s, x) => s + (x - mean) ** 2, 0) / count
+      points.push({
+        label: `ف${sem} ${shortYear(yearId)}`,
+        labelEn: `S${sem} ${shortYear(yearId)}`,
+        yearId, semester: sem, count, mean,
+        stdDev: round2(Math.sqrt(variance)),
+        passRate: round2((scores.filter(s => s >= passMark).length / count) * 100),
+        above75Rate: round2((scores.filter(s => s >= 75).length / count) * 100),
+        above90Rate: round2((scores.filter(s => s >= 90).length / count) * 100),
+        passMark,
+      })
+    }
+  }
+  return points
+}
+
+// ===== GRADE-LEVEL STATS =====
+export interface GradeStats {
+  grade: number
+  count: number
+  mean: number
+  median: number
+  stdDev: number
+  passRate: number
+  above75Rate: number
+  above90Rate: number
+  cycle: Cycle
+  level: 'excellent' | 'very_good' | 'good' | 'acceptable' | 'weak'
+}
+
+export function computeGradeStats(
+  records: StudentRecord[],
+  semester: Semester | 'annual'
+): GradeStats[] {
+  const gradeMap = new Map<number, { avgs: number[]; cycle: Cycle }>()
+  for (const r of records) {
+    const scores: number[] = []
+    for (const subject of ANALYSIS_SUBJECTS) {
+      if (!isSubjectRelevantForGrade(subject, r.grade)) continue
+      const g = r.grades[subject]
+      if (!g) continue
+      let score: number | null = null
+      if (semester === 1) score = g.s1
+      else if (semester === 2) score = g.s2
+      else if (semester === 3) score = g.s3
+      else score = g.annual
+      if (score !== null) scores.push(score)
+    }
+    if (scores.length > 0) {
+      if (!gradeMap.has(r.grade)) gradeMap.set(r.grade, { avgs: [], cycle: r.cycle })
+      gradeMap.get(r.grade)!.avgs.push(scores.reduce((a, b) => a + b, 0) / scores.length)
+    }
+  }
+  const result: GradeStats[] = []
+  for (const [grade, { avgs, cycle }] of gradeMap) {
+    const passMark = getPassMark(cycle)
+    const sorted = [...avgs].sort((a, b) => a - b)
+    const count = avgs.length
+    const mean = round2(avgs.reduce((a, b) => a + b, 0) / count)
+    const variance = avgs.reduce((s, x) => s + (x - mean) ** 2, 0) / count
+    const passRate = round2((avgs.filter(s => s >= passMark).length / count) * 100)
+    const above75Rate = round2((avgs.filter(s => s >= 75).length / count) * 100)
+    const above90Rate = round2((avgs.filter(s => s >= 90).length / count) * 100)
+    let level: GradeStats['level']
+    if (passRate < 75) level = 'weak'
+    else if (above75Rate >= 70) level = 'excellent'
+    else if (above75Rate >= 60) level = 'very_good'
+    else if (above75Rate >= 50) level = 'good'
+    else level = 'acceptable'
+    result.push({ grade, count, mean, median: round2(percentile(sorted, 50)), stdDev: round2(Math.sqrt(variance)), passRate, above75Rate, above90Rate, cycle, level })
+  }
+  return result.sort((a, b) => a.grade - b.grade)
+}
+
+// ===== FORMATIVE vs EXAM GAP =====
+export interface FormativeExamGap {
+  subjectCode: SubjectCode
+  grade: number | null
+  semester: 1 | 3
+  avgFormative: number | null
+  avgExam: number | null
+  gap: number | null   // exam - formative (negative = exam lower)
+  count: number
+  studentsExamHigher: number
+  studentsExamLower: number
+}
+
+export function computeFormativeExamGaps(
+  formativeScores: FormativeScore[],
+  examScores: ExamScore[],
+  semester: 1 | 3,
+  grade?: number
+): FormativeExamGap[] {
+  const fFiltered = grade !== undefined ? formativeScores.filter(f => f.grade === grade) : formativeScores
+  const eFiltered = grade !== undefined ? examScores.filter(e => e.grade === grade) : examScores
+
+  const fMap = new Map<string, number>()
+  for (const f of fFiltered) {
+    const score = semester === 1 ? f.s1 : f.s3
+    if (score !== null) fMap.set(`${f.studentId}:${f.subjectCode}`, score)
+  }
+  const eMap = new Map<string, number>()
+  for (const e of eFiltered) {
+    const score = semester === 1 ? e.s1 : e.s3
+    if (score !== null) eMap.set(`${e.studentId}:${e.subjectCode}`, score)
+  }
+
+  const subjectSet = new Set<SubjectCode>()
+  for (const k of fMap.keys()) subjectSet.add(k.split(':')[1] as SubjectCode)
+  for (const k of eMap.keys()) subjectSet.add(k.split(':')[1] as SubjectCode)
+
+  const results: FormativeExamGap[] = []
+  for (const subject of subjectSet) {
+    if (!ANALYSIS_SUBJECTS.includes(subject)) continue
+    const paired: Array<{ f: number; e: number }> = []
+    const allForms: number[] = []
+    const allExams: number[] = []
+
+    for (const [k, fScore] of fMap) {
+      if (!k.endsWith(`:${subject}`)) continue
+      allForms.push(fScore)
+      const sid = k.split(':')[0]
+      const eScore = eMap.get(`${sid}:${subject}`)
+      if (eScore !== undefined) paired.push({ f: fScore, e: eScore })
+    }
+    for (const [k, eScore] of eMap) {
+      if (!k.endsWith(`:${subject}`)) continue
+      allExams.push(eScore)
+    }
+
+    const avg = (arr: number[]) => arr.length > 0 ? round2(arr.reduce((a, b) => a + b, 0) / arr.length) : null
+    const avgFormative = avg(allForms)
+    const avgExam = avg(allExams)
+    const gap = avgFormative !== null && avgExam !== null ? round2(avgExam - avgFormative) : null
+
+    results.push({
+      subjectCode: subject,
+      grade: grade ?? null,
+      semester,
+      avgFormative,
+      avgExam,
+      gap,
+      count: paired.length,
+      studentsExamHigher: paired.filter(p => p.e > p.f).length,
+      studentsExamLower: paired.filter(p => p.e < p.f).length,
+    })
+  }
+  return results.sort((a, b) => (a.gap ?? 0) - (b.gap ?? 0))
 }
