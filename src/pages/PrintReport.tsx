@@ -99,6 +99,29 @@ function genNarrativeSubject(ind: AchievementIndicator, stats: ReturnType<typeof
     `${getProportionLabel(ind.above75Rate, 'ar')} من الطلاب حققوا إنجازاً عالياً (فوق 75%).`
 }
 
+function ChartTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-center gap-1.5 text-sm font-bold mb-2 pb-1 border-b border-gray-200" style={{ color: '#1D5E3F' }}>
+      <span>📊</span>{children}
+    </p>
+  )
+}
+function TableTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-center gap-1.5 text-sm font-bold mb-2 pb-1 border-b border-gray-200" style={{ color: '#1D5E3F' }}>
+      <span>📋</span>{children}
+    </p>
+  )
+}
+function SubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 mt-5 mb-3">
+      <div className="w-1 h-5 rounded-full shrink-0" style={{ background: '#1D5E3F99' }} />
+      <p className="text-sm font-bold" style={{ color: '#1D5E3F' }}>{children}</p>
+    </div>
+  )
+}
+
 // ── Section wrapper ─────────────────────────────────────────────────────────
 function Section({ title, subtitle, num, children }: {
   title: string; subtitle?: string; num?: number; children: React.ReactNode
@@ -469,7 +492,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           </div>
           <div className="grid grid-cols-2 gap-6">
             <div>
-              <p className="text-xs font-semibold text-gray-500 mb-3">توزيع الإنجاز حسب المادة</p>
+              <ChartTitle>توزيع الإنجاز حسب المادة — نسبة الطلاب ≥75%</ChartTitle>
               <div className="space-y-2">
                 {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(ind => (
                   <div key={ind.subjectCode}>
@@ -483,7 +506,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
               </div>
             </div>
             <div>
-              <p className="text-xs font-semibold text-gray-500 mb-3">مقارنة النجاح / الإخفاق / فوق 75%</p>
+              <ChartTitle>مقارنة النجاح / الرسوب / فوق 75% — حسب المادة</ChartTitle>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(i => ({
                   name: (SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode).slice(0, 8),
@@ -519,7 +542,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           <SubSection title="أ) مستوى المدرسة — الإحصاءات التفصيلية">
             <div className="grid grid-cols-2 gap-6 mb-4">
               <div>
-                <p className="text-xs font-semibold text-gray-500 mb-3">مخطط الشبكة — نسبة فوق 75% لكل مادة</p>
+                <ChartTitle>مخطط الشبكة — نسبة الطلاب ≥75% لكل مادة</ChartTitle>
                 <ResponsiveContainer width="100%" height={200}>
                   <RadarChart data={indicators.map(i => ({ subject: SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode, value: i.above75Rate }))} outerRadius={75}>
                     <PolarGrid />
@@ -530,7 +553,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                 </ResponsiveContainer>
               </div>
               <div>
-                <p className="text-xs font-semibold text-gray-500 mb-3">توزيع شرائح الإنجاز</p>
+                <ChartTitle>توزيع شرائح الإنجاز حسب المادة (شرائح الدرجات)</ChartTitle>
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={indicators.map(i => ({
                     name: (SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode).slice(0, 8),
@@ -553,6 +576,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                 </ResponsiveContainer>
               </div>
             </div>
+            <TableTitle>جدول الإحصاءات التفصيلية — مستوى المدرسة (المعيار 1.1)</TableTitle>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
@@ -595,7 +619,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
               </table>
             </div>
             <div className="mt-4 space-y-2">
-              <p className="text-xs font-semibold text-gray-500">📊 التحليل الرقمي والوصفي لكل مادة</p>
+              <TableTitle>التحليل الرقمي والوصفي لكل مادة</TableTitle>
               {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(ind => (
                 <div key={ind.subjectCode} className="p-3 rounded-lg text-xs text-gray-700 leading-6"
                   style={{ background: levelColor(ind.level) + '0d', borderRight: `3px solid ${levelColor(ind.level)}` }}>
@@ -610,6 +634,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
 
           {/* By grade */}
           <SubSection title="ب) مستوى الصفوف — مقارنة الإنجاز">
+            <TableTitle>جدول مقارنة الإنجاز حسب الصف — مستوى المدرسة</TableTitle>
             <div className="overflow-x-auto mb-4">
               <table className="w-full text-xs border-collapse">
                 <thead>
@@ -691,7 +716,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
             {years.length >= 2 ? (
               <>
                 <div className="mb-4">
-                  <p className="text-xs font-semibold text-gray-600 mb-2">اتجاه معدل المدرسة عبر السنوات</p>
+                  <ChartTitle>مخطط الاتجاه — متوسط المدرسة عبر السنوات الدراسية</ChartTitle>
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={schoolTrend} margin={{ top: 5, right: 20, left: 0, bottom: 60 }}>
                       <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -706,6 +731,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
+                <TableTitle>جدول الإحصاءات السنوية — مستوى المدرسة (متعدد السنوات)</TableTitle>
                 <div className="overflow-x-auto mb-4">
                   <table className="w-full text-xs border-collapse">
                     <thead>
@@ -734,7 +760,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs font-semibold text-gray-600 mb-2">تطور المواد عبر السنوات</p>
+                <TableTitle>جدول تطور متوسط كل مادة عبر السنوات الدراسية</TableTitle>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse">
                     <thead>
@@ -783,7 +809,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           {/* Part 2: Within-year */}
           <SubSection title="الجزء 2 — التقدم داخل العام الدراسي (ف1 → ف2 → ف3)">
             {/* School within-year */}
-            <p className="text-xs font-semibold text-gray-600 mb-2">أ) مستوى المدرسة</p>
+            <SubLabel>أ) مستوى المدرسة — التقدم داخل العام (ف1 → ف2 → ف3)</SubLabel>
             <div className="grid grid-cols-3 gap-4 mb-4">
               {withinSchoolData.map(d => (
                 <div key={d.sem} className="card p-4 text-center border rounded-xl">
@@ -795,6 +821,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
               ))}
             </div>
             <div className="mb-4">
+              <ChartTitle>مخطط تطور متوسط المدرسة داخل العام (ف1 → ف2 → ف3)</ChartTitle>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={withinSchoolData.map(d => ({ sem: semLbl(d.sem), mean: d.mean, above75Rate: d.above75Rate }))} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -810,7 +837,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
             </div>
 
             {/* Subject within-year */}
-            <p className="text-xs font-semibold text-gray-600 mb-2">ب) مستوى المواد</p>
+            <SubLabel>ب) مستوى المواد — التقدم داخل العام حسب المادة</SubLabel>
+            <TableTitle>جدول التقدم داخل العام — متوسط ونسبة ≥75% لكل مادة</TableTitle>
             <div className="overflow-x-auto mb-4">
               <table className="w-full text-xs border-collapse">
                 <thead>
@@ -853,7 +881,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
             </div>
 
             {/* Grade within-year */}
-            <p className="text-xs font-semibold text-gray-600 mb-2">ج) مستوى الصفوف</p>
+            <SubLabel>ج) مستوى الصفوف — التقدم داخل العام حسب الصف</SubLabel>
+            <TableTitle>جدول التقدم داخل العام — متوسط ونسبة ≥75% لكل صف</TableTitle>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
@@ -895,7 +924,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           <SubSection title="الجزء 3 — نسب التقدم والتراجع">
             {progressRates.length > 0 && progressRates[0].transitions.length > 0 ? (
               <>
-                <p className="text-xs font-semibold text-gray-600 mb-3">أ) التقدم والتراجع بين السنوات (إجمالي المدرسة)</p>
+                <SubLabel>أ) نسب التقدم والتراجع بين السنوات — مستوى المدرسة</SubLabel>
                 {progressRates[0].transitions.map(t => {
                   let totImp = 0, totReg = 0, totSta = 0
                   for (const sp of progressRates) {
@@ -927,10 +956,10 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   )
                 })}
 
-                <p className="text-xs font-semibold text-gray-600 mb-3 mt-4">ب) نسب التقدم بين السنوات — حسب المادة</p>
+                <SubLabel>ب) نسب التقدم والتراجع بين السنوات — حسب المادة</SubLabel>
                 {progressRates[0].transitions.map(t => (
                   <div key={t.yearFrom} className="mb-4">
-                    <p className="text-xs text-gray-500 mb-1">{t.yearFrom} → {t.yearTo}</p>
+                    <TableTitle>جدول نسب التقدم — {t.yearFrom} إلى {t.yearTo} — حسب المادة</TableTitle>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border-collapse">
                         <thead>
@@ -978,7 +1007,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
 
             {progressRates[0]?.withinYear && (
               <>
-                <p className="text-xs font-semibold text-gray-600 mb-3 mt-4">ج) التقدم داخل العام — حسب المادة</p>
+                <SubLabel>ج) نسب التقدم داخل العام — حسب المادة (ف1→ف2→ف3)</SubLabel>
+                <TableTitle>جدول التقدم داخل العام حسب المادة (تقدم / ثبات / تراجع)</TableTitle>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse">
                     <thead>
@@ -1051,6 +1081,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
             {allFormativeGapsS1.length > 0 ? (
               <>
                 <div className="mb-4">
+                  <ChartTitle>مخطط الفجوة: التكويني مقابل الاختبار — الفصل الأول</ChartTitle>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart
                       data={allFormativeGapsS1.map(g => ({ name: subjectName(g.subjectCode), gap: g.gap ?? 0 }))}
@@ -1066,6 +1097,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+                <TableTitle>جدول الفجوة — التكويني مقابل الاختبار — مستوى المادة (الفصل الأول)</TableTitle>
                 <div className="overflow-x-auto mb-4">
                   <table className="w-full text-xs border-collapse">
                     <thead>
@@ -1092,7 +1124,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs font-semibold text-gray-600 mb-2">حسب الصفوف (الفصل الأول)</p>
+                <SubLabel>تفاصيل حسب الصف — التكويني مقابل الاختبار (الفصل الأول)</SubLabel>
                 {gradeFormativeGapsS1.map(({ grade, gaps }) => (
                   gaps.length > 0 && (
                     <div key={grade} className="mb-3 p-3 border rounded-lg">
@@ -1131,6 +1163,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           {/* Part 1: Formative vs Exam — S3 */}
           {allFormativeGapsS3.length > 0 && (
             <SubSection title="الجزء 1 — التقويم التكويني مقابل الاختبار (الفصل الثالث)">
+              <TableTitle>جدول الفجوة — التكويني مقابل الاختبار — مستوى المادة (الفصل الثالث)</TableTitle>
               <div className="overflow-x-auto mb-4">
                 <table className="w-full text-xs border-collapse">
                   <thead>
@@ -1157,7 +1190,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs font-semibold text-gray-600 mb-2">حسب الصفوف (الفصل الثالث)</p>
+              <SubLabel>تفاصيل حسب الصف — التكويني مقابل الاختبار (الفصل الثالث)</SubLabel>
               {gradeFormativeGapsS3.map(({ grade, gaps }) => (
                 gaps.length > 0 && (
                   <div key={grade} className="mb-3 p-3 border rounded-lg">
@@ -1196,7 +1229,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           <SubSection title="الجزء 2 — الفجوة بين الفصول الدراسية">
             {schoolSemSummary ? (
               <>
-                <p className="text-xs font-semibold text-gray-600 mb-3">أ) مستوى المدرسة</p>
+                <SubLabel>أ) ملخص الفجوة بين الفصول — مستوى المدرسة</SubLabel>
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   {[
                     { label: 'متوسط ف1 /100', value: schoolSemSummary.avgS1, color: 'text-blue-600' },
@@ -1226,6 +1259,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
 
                 {semGaps.length > 0 && (
                   <div className="mb-4">
+                    <ChartTitle>مخطط متوسطات الفصول الدراسية حسب المادة (ف1 / ف2 / ف3)</ChartTitle>
                     <ResponsiveContainer width="100%" height={220}>
                       <BarChart
                         data={semGaps.filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode)).map(g => ({
@@ -1246,7 +1280,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   </div>
                 )}
 
-                <p className="text-xs font-semibold text-gray-600 mb-2">ب) مستوى المواد</p>
+                <SubLabel>ب) الفجوة بين الفصول — مستوى المادة</SubLabel>
+                <TableTitle>جدول الفجوة بين الفصول — متوسط كل فصل والفجوة والأولوية (مستوى المادة)</TableTitle>
                 <div className="overflow-x-auto mb-4">
                   <table className="w-full text-xs border-collapse">
                     <thead>
@@ -1284,7 +1319,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   </table>
                 </div>
 
-                <p className="text-xs font-semibold text-gray-600 mb-2">ج) مستوى الصفوف</p>
+                <SubLabel>ج) الفجوة بين الفصول — مستوى الصف</SubLabel>
                 {grades.map(grade => {
                   const gradeRecs = records.filter(r => r.grade === grade)
                   const gradeGaps = computeSemesterGaps(gradeRecs).filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode))
@@ -1333,6 +1368,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           <>
             <div className="print-break" />
             <Section num={5} title="متابعة تطور الأداء الفصلي" subtitle="مسار الأداء من التشخيصي حتى الفصل الثالث">
+              <ChartTitle>مخطط تطور الأداء الفصلي — من التشخيصي حتى الفصل الثالث</ChartTitle>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={termRows} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -1348,6 +1384,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                 </BarChart>
               </ResponsiveContainer>
               <div className="mt-4 overflow-x-auto">
+                <TableTitle>جدول مسار الأداء من التشخيصي حتى الفصل الثالث — حسب المادة</TableTitle>
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr style={{ background: C.primary + '15' }}>
