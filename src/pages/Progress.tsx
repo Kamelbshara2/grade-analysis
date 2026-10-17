@@ -143,6 +143,18 @@ export default function Progress({ lang }: ProgressProps) {
         <>
           <div className="card">
             <h2 className="font-semibold mb-3">{SUBJECT_LABELS[subject]?.[lang] ?? subject}</h2>
+            {/* Data availability */}
+            {progressResults.length > 0 && (() => {
+              const withData = progressResults.filter(r => r.category !== 'no_baseline').length
+              const pct = ((withData / progressResults.length) * 100).toFixed(0)
+              return (
+                <p className="text-xs text-gray-400 mb-3">
+                  {lang === 'ar'
+                    ? `البيانات المتوفرة: ${withData} من ${progressResults.length} طالب (${pct}%)`
+                    : `Available data: ${withData} of ${progressResults.length} students (${pct}%)`}
+                </p>
+              )
+            })()}
             <ProgressPieChart results={progressResults} />
           </div>
 
@@ -179,6 +191,21 @@ export default function Progress({ lang }: ProgressProps) {
 
       {view === 'semester' && (
         <div className="card overflow-x-auto">
+          {/* Data availability for semester view */}
+          {semesterProgress.length > 0 && (() => {
+            const withAny = semesterProgress.filter(r => r.s1 !== null || r.s2 !== null || r.s3 !== null).length
+            const withS1S2 = semesterProgress.filter(r => r.s1 !== null && r.s2 !== null).length
+            const withAll3 = semesterProgress.filter(r => r.s1 !== null && r.s2 !== null && r.s3 !== null).length
+            const total = semesterProgress.length
+            return (
+              <div className="flex flex-wrap gap-4 text-xs text-gray-500 mb-3 pb-3 border-b border-gray-100 dark:border-gray-700">
+                <span>{lang === 'ar' ? `إجمالي الطلاب: ${total}` : `Total students: ${total}`}</span>
+                <span className="text-blue-500">{lang === 'ar' ? `لديهم بيانات: ${withAny} (${((withAny/total)*100).toFixed(0)}%)` : `Any data: ${withAny} (${((withAny/total)*100).toFixed(0)}%)`}</span>
+                <span className="text-green-500">{lang === 'ar' ? `ف1+ف2: ${withS1S2} (${((withS1S2/total)*100).toFixed(0)}%)` : `S1+S2: ${withS1S2} (${((withS1S2/total)*100).toFixed(0)}%)`}</span>
+                <span className="text-primary-500">{lang === 'ar' ? `الفصول الثلاثة: ${withAll3} (${((withAll3/total)*100).toFixed(0)}%)` : `All 3 semesters: ${withAll3} (${((withAll3/total)*100).toFixed(0)}%)`}</span>
+              </div>
+            )
+          })()}
           <table className="table-base">
             <thead>
               <tr>
@@ -210,7 +237,7 @@ export default function Progress({ lang }: ProgressProps) {
         </div>
       )}
 
-      {view === 'multiyear' && <MultiYearView rows={multiYearRows} years={years} lang={lang} subject={subject} />}
+      {view === 'multiyear' && <MultiYearView rows={multiYearRows} years={years} lang={lang} subject={subject} totalCurrentStudents={currentRecords.length} />}
     </div>
   )
 }
@@ -244,28 +271,40 @@ function DiffCell({ diff }: { diff: number | null }) {
   return <td className={clsx('font-mono text-center text-sm', color)}>{diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)}</td>
 }
 
-function MultiYearView({ rows, years, lang, subject }: {
+function MultiYearView({ rows, years, lang, subject, totalCurrentStudents }: {
   rows: MultiYearRow[]
   years: string[]
   lang: Language
   subject: SubjectCode
+  totalCurrentStudents: number
 }) {
   const ar = lang === 'ar'
 
   // Summary counts for overall trend
-  const total = rows.filter(r => r.overallCategory !== null).length
+  const tracked = rows.filter(r => r.overallCategory !== null).length
   const progress = rows.filter(r => r.overallCategory === 'significant_progress').length
   const stable = rows.filter(r => r.overallCategory === 'stable').length
   const regression = rows.filter(r => r.overallCategory === 'regression').length
+  // Data availability: how many current students have multi-year tracking
+  const availPct = totalCurrentStudents > 0 ? ((tracked / totalCurrentStudents) * 100).toFixed(0) : '0'
 
   return (
     <div className="space-y-4">
 
+      {/* Data availability notice */}
+      <div className="text-xs text-gray-400 flex gap-2 items-center">
+        <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800">
+          {ar
+            ? `البيانات المتوفرة: ${tracked} من ${totalCurrentStudents} طالب (${availPct}%)`
+            : `Available data: ${tracked} of ${totalCurrentStudents} students (${availPct}%)`}
+        </span>
+      </div>
+
       {/* Summary KPI strip */}
-      {total > 0 && (
+      {tracked > 0 && (
         <div className="grid grid-cols-4 gap-3">
           {[
-            { label: ar ? 'إجمالي المقارنات' : 'Tracked', value: total, color: 'text-gray-700 dark:text-gray-200' },
+            { label: ar ? 'إجمالي المتابَعين' : 'Tracked', value: tracked, color: 'text-gray-700 dark:text-gray-200' },
             { label: ar ? 'تقدم ملحوظ' : 'Progress', value: progress, color: 'text-green-600 dark:text-green-400' },
             { label: ar ? 'مستقر' : 'Stable', value: stable, color: 'text-blue-600 dark:text-blue-400' },
             { label: ar ? 'تراجع' : 'Regressed', value: regression, color: 'text-red-600 dark:text-red-400' },
@@ -273,8 +312,8 @@ function MultiYearView({ rows, years, lang, subject }: {
             <div key={k.label} className="metric-card">
               <p className="text-xs text-gray-400">{k.label}</p>
               <p className={clsx('text-2xl font-bold', k.color)}>{k.value}</p>
-              {total > 0 && k.value !== total && (
-                <p className="text-xs text-gray-400">{((k.value / total) * 100).toFixed(0)}%</p>
+              {tracked > 0 && k.value !== tracked && (
+                <p className="text-xs text-gray-400">{((k.value / tracked) * 100).toFixed(0)}%</p>
               )}
             </div>
           ))}
