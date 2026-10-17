@@ -928,13 +928,14 @@ export interface SubjectProgressTrend {
 }
 
 function classifyDiff(baseline: number, current: number, diff: number): 'improved' | 'regressed' | 'stable' {
+  // Students at or above 90: no improvement counted; only regression if they drop below 85
   if (baseline >= 90) {
-    if (current < 86) return 'regressed'
-    if (diff > 4) return 'improved'
+    if (current < 85) return 'regressed'
     return 'stable'
   }
-  if (diff > 4) return 'improved'
-  if (diff < -4) return 'regressed'
+  // For all others: ≥4 improvement or ≥4 drop required
+  if (diff >= 4) return 'improved'
+  if (diff <= -4) return 'regressed'
   return 'stable'
 }
 
