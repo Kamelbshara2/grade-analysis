@@ -692,9 +692,10 @@ export function computeSemesterGaps(
     const avgS3 = avg(s3s)
     const avgAnnual = avg(annuals)
 
-    const gapS1S3 = (avgS1 !== null && avgS3 !== null) ? round2(avgS3 - avgS1) : null
-    const gapS1S2 = (avgS1 !== null && avgS2 !== null) ? round2(avgS2 - avgS1) : null
-    const gapS2S3 = (avgS2 !== null && avgS3 !== null) ? round2(avgS3 - avgS2) : null
+    // gap% = (new - old) / old * 100  (positive = زيادة, negative = نقصان)
+    const gapS1S3 = (avgS1 !== null && avgS3 !== null && avgS1 !== 0) ? round2((avgS3 - avgS1) / avgS1 * 100) : null
+    const gapS1S2 = (avgS1 !== null && avgS2 !== null && avgS1 !== 0) ? round2((avgS2 - avgS1) / avgS1 * 100) : null
+    const gapS2S3 = (avgS2 !== null && avgS3 !== null && avgS2 !== 0) ? round2((avgS3 - avgS2) / avgS2 * 100) : null
 
     // Per-student drop/gain analysis (s3 vs s1)
     const pairedStudents = records.filter(r => {
@@ -710,12 +711,12 @@ export function computeSemesterGaps(
       return g.s3! > g.s1!
     }).length
 
-    // Priority based on average gap (s1 to s3)
+    // Priority based on % gap (s1 to s3)
     let priority: SemesterGap['priority'] = 'ok'
     if (gapS1S3 !== null) {
-      if (gapS1S3 < -15) priority = 'critical'
-      else if (gapS1S3 < -8) priority = 'high'
-      else if (gapS1S3 < -3) priority = 'medium'
+      if (gapS1S3 < -20) priority = 'critical'
+      else if (gapS1S3 < -10) priority = 'high'
+      else if (gapS1S3 < -4) priority = 'medium'
       else if (gapS1S3 < 0) priority = 'low'
       else priority = 'ok'
     }
@@ -906,9 +907,9 @@ export interface FormativeExamGap {
   subjectCode: SubjectCode
   grade: number | null
   semester: 1 | 3
-  avgFormative: number | null
-  avgExam: number | null
-  gap: number | null   // exam - formative (negative = exam lower)
+  avgFormative: number | null  // out of 100
+  avgExam: number | null       // out of 100
+  gap: number | null   // % gap: avg[(school - exam) / semester_total * 100] — positive = school > exam
   count: number
   studentsExamHigher: number
   studentsExamLower: number
@@ -918,7 +919,8 @@ export function computeFormativeExamGaps(
   formativeScores: FormativeScore[],
   examScores: ExamScore[],
   semester: 1 | 3,
-  grade?: number
+  grade?: number,
+  records?: StudentRecord[]
 ): FormativeExamGap[] {
   const fFiltered = grade !== undefined ? formativeScores.filter(f => f.grade === grade) : formativeScores
   const eFiltered = grade !== undefined ? examScores.filter(e => e.grade === grade) : examScores
@@ -944,13 +946,35 @@ export function computeFormativeExamGaps(
     const paired: Array<{ f: number; e: number }> = []
     const allForms: number[] = []
     const allExams: number[] = []
+    const gapRatios: number[] = []
+
+    // Build semester total map from records for gap% denominator
+    const semTotalMap = new Map<string, number>()
+    if (records) {
+      for (const r of records) {
+        if (grade !== undefined && r.grade !== grade) continue
+        const g = r.grades[subject]
+        if (!g) continue
+        const total = semester === 1 ? g.s1 : g.s3
+        if (total !== null && total !== 0) semTotalMap.set(r.student.id, total)
+      }
+    }
 
     for (const [k, fScore] of fMap) {
       if (!k.endsWith(`:${subject}`)) continue
       allForms.push(fScore)
       const sid = k.split(':')[0]
       const eScore = eMap.get(`${sid}:${subject}`)
-      if (eScore !== undefined) paired.push({ f: fScore, e: eScore })
+      if (eScore !== undefined) {
+        paired.push({ f: fScore, e: eScore })
+        const semTotal = semTotalMap.get(sid)
+        if (semTotal && semTotal !== 0) {
+          gapRatios.push((fScore - eScore) / semTotal * 100)
+        } else {
+          // fallback: use 100 as denominator when semester total unavailable
+          gapRatios.push(fScore - eScore)
+        }
+      }
     }
     for (const [k, eScore] of eMap) {
       if (!k.endsWith(`:${subject}`)) continue
@@ -960,7 +984,7 @@ export function computeFormativeExamGaps(
     const avg = (arr: number[]) => arr.length > 0 ? round2(arr.reduce((a, b) => a + b, 0) / arr.length) : null
     const avgFormative = avg(allForms)
     const avgExam = avg(allExams)
-    const gap = avgFormative !== null && avgExam !== null ? round2(avgExam - avgFormative) : null
+    const gap = gapRatios.length > 0 ? round2(gapRatios.reduce((a, b) => a + b, 0) / gapRatios.length) : null
 
     results.push({
       subjectCode: subject,
