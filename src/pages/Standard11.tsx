@@ -81,6 +81,18 @@ export default function Standard11({ lang }: Props) {
     })
   }, [records])
 
+  // ── School: annual stats from annualAvg ──────────────────────────────────
+  const annualSchoolData = useMemo(() => {
+    const valid = records.filter(r => r.annualAvg !== null)
+    const count = valid.length
+    if (count === 0) return { count: 0, passRate: 0, above75Rate: 0, level: 'weak' }
+    const passCount = valid.filter(r => r.annualAvg! >= getPassMark(getCycle(r.grade))).length
+    const above75Count = valid.filter(r => r.annualAvg! >= 75).length
+    const passRate = round2((passCount / count) * 100)
+    const above75Rate = round2((above75Count / count) * 100)
+    return { count, passRate, above75Rate, level: deriveLevel(passRate, above75Rate) }
+  }, [records])
+
   // ── Subject: annual stats for all 9 subjects (regardless of grade filter) ──
   const subjectAnnualData = useMemo(() => {
     // For each subject, compute indicators from all records that have any data for it
@@ -180,34 +192,62 @@ export default function Standard11({ lang }: Props) {
 
       {/* ── School ── */}
       {section === 'school' && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {schoolSemData.map(({ sem, count, passRate, above75Rate, level }) => (
-            <div key={sem} className="card p-5 space-y-4">
-              {/* Semester label + badge */}
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-base text-gray-800 dark:text-gray-100">{semLabel(sem)}</span>
-                <LevelBadge level={level} lang={lang} />
-              </div>
-              {/* Two rates */}
-              <div className="space-y-3">
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-400">{ar ? 'نسبة النجاح' : 'Pass Rate'}</span>
-                  <span className="text-3xl font-bold text-amber-500">{passRate.toFixed(1)}%</span>
-                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
-                    <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${Math.min(passRate, 100)}%` }} />
+        <div className="space-y-4">
+          {/* S1 / S2 / S3 cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {schoolSemData.map(({ sem, count, passRate, above75Rate, level }) => (
+              <div key={sem} className="card p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-base text-gray-800 dark:text-gray-100">{semLabel(sem)}</span>
+                  <LevelBadge level={level} lang={lang} />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-gray-400">{ar ? 'نسبة النجاح' : 'Pass Rate'}</span>
+                    <span className="text-3xl font-bold text-amber-500">{passRate.toFixed(1)}%</span>
+                    <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                      <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${Math.min(passRate, 100)}%` }} />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-gray-400">{ar ? 'نسبة فوق 75' : 'Above 75%'}</span>
+                    <span className="text-3xl font-bold text-emerald-500">{above75Rate.toFixed(1)}%</span>
+                    <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                      <div className="bg-emerald-400 h-1.5 rounded-full" style={{ width: `${Math.min(above75Rate, 100)}%` }} />
+                    </div>
                   </div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-400">{ar ? 'نسبة فوق 75' : 'Above 75%'}</span>
-                  <span className="text-3xl font-bold text-emerald-500">{above75Rate.toFixed(1)}%</span>
-                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
-                    <div className="bg-emerald-400 h-1.5 rounded-full" style={{ width: `${Math.min(above75Rate, 100)}%` }} />
-                  </div>
-                </div>
+                <p className="text-xs text-gray-400 text-end">{count} {ar ? 'طالب' : 'students'}</p>
               </div>
-              <p className="text-xs text-gray-400 text-end">{count} {ar ? 'طالب' : 'students'}</p>
+            ))}
+          </div>
+
+          {/* Annual card — full-width below semester cards */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <span className="font-bold text-base text-gray-800 dark:text-gray-100">
+                {ar ? 'السنة كاملة' : 'Full Year'}
+              </span>
+              <LevelBadge level={annualSchoolData.level} lang={lang} />
             </div>
-          ))}
+            <div className="grid grid-cols-2 gap-6">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-400">{ar ? 'نسبة النجاح' : 'Pass Rate'}</span>
+                <span className="text-3xl font-bold text-amber-500">{annualSchoolData.passRate.toFixed(1)}%</span>
+                <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                  <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${Math.min(annualSchoolData.passRate, 100)}%` }} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-400">{ar ? 'نسبة فوق 75' : 'Above 75%'}</span>
+                <span className="text-3xl font-bold text-emerald-500">{annualSchoolData.above75Rate.toFixed(1)}%</span>
+                <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
+                  <div className="bg-emerald-400 h-1.5 rounded-full" style={{ width: `${Math.min(annualSchoolData.above75Rate, 100)}%` }} />
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 text-end mt-3">{annualSchoolData.count} {ar ? 'طالب' : 'students'}</p>
+          </div>
         </div>
       )}
 
