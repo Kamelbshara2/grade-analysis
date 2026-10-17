@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, ReferenceLine, Cell,
 } from 'recharts'
 import { dataStore } from '@/store/dataStore'
-import { computeFormativeExamGaps, computeSemesterGaps } from '@/utils/statistics'
+import { computeFormativeExamGaps, computeSemesterGaps, round2 } from '@/utils/statistics'
 import { ANALYSIS_SUBJECTS, SUBJECT_LABELS, isSubjectRelevantForGrade } from '@/utils/subjectMapping'
 import type { Language, SubjectCode } from '@/types'
 
@@ -13,7 +13,7 @@ interface Props { lang: Language }
 type Part = 'formative' | 'semester'
 type Section = 'school' | 'subject' | 'grade'
 
-function GapBar({ value, max = 20 }: { value: number | null; max?: number }) {
+function GapBar({ value, max = 50 }: { value: number | null; max?: number }) {
   if (value === null) return <span className="text-gray-400">—</span>
   const pct = Math.min(Math.abs(value) / max * 100, 100)
   const neg = value < 0
@@ -25,8 +25,8 @@ function GapBar({ value, max = 20 }: { value: number | null; max?: number }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className={`text-xs font-semibold w-12 text-end ${neg ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
-        {value >= 0 ? '+' : ''}{value.toFixed(1)}
+      <span className={`text-xs font-semibold w-16 text-end ${neg ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
+        {value >= 0 ? '+' : ''}{value.toFixed(1)}%
       </span>
     </div>
   )
@@ -49,16 +49,16 @@ export default function Standard13({ lang }: Props) {
 
   // ---- Part 1: Formative vs Exam ----
   const allFormativeGaps = useMemo(
-    () => computeFormativeExamGaps(formativeScores, examScores, semFilter),
-    [formativeScores, examScores, semFilter]
+    () => computeFormativeExamGaps(formativeScores, examScores, semFilter, undefined, records),
+    [formativeScores, examScores, semFilter, records]
   )
 
   const gradeFormativeGaps = useMemo(() => {
     return grades.map(grade => ({
       grade,
-      gaps: computeFormativeExamGaps(formativeScores, examScores, semFilter, grade),
+      gaps: computeFormativeExamGaps(formativeScores, examScores, semFilter, grade, records),
     }))
-  }, [formativeScores, examScores, semFilter, grades])
+  }, [formativeScores, examScores, semFilter, grades, records])
 
   // School-level summary (average across subjects)
   const schoolFormativeSummary = useMemo(() => {
@@ -83,9 +83,9 @@ export default function Standard13({ lang }: Props) {
     const avgS1 = valid.reduce((a, b) => a + (b.avgS1 ?? 0), 0) / valid.length
     const avgS2 = valid.reduce((a, b) => a + (b.avgS2 ?? 0), 0) / valid.length
     const avgS3 = valid.reduce((a, b) => a + (b.avgS3 ?? 0), 0) / valid.length
-    const gapS1S2 = avgS2 - avgS1
-    const gapS2S3 = avgS3 - avgS2
-    const gapS1S3 = avgS3 - avgS1
+    const gapS1S2 = avgS1 !== 0 ? round2((avgS2 - avgS1) / avgS1 * 100) : 0
+    const gapS2S3 = avgS2 !== 0 ? round2((avgS3 - avgS2) / avgS2 * 100) : 0
+    const gapS1S3 = avgS1 !== 0 ? round2((avgS3 - avgS1) / avgS1 * 100) : 0
     return { avgS1, avgS2, avgS3, gapS1S2, gapS2S3, gapS1S3 }
   }, [semGaps])
 
@@ -184,17 +184,17 @@ export default function Standard13({ lang }: Props) {
               {schoolFormativeSummary ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                   <div className="card p-4 text-center">
-                    <div className="text-xs text-gray-500 mb-1">{ar ? 'متوسط التكويني' : 'Avg Formative'}</div>
+                    <div className="text-xs text-gray-500 mb-1">{ar ? 'متوسط التكويني / 100' : 'Avg Formative / 100'}</div>
                     <div className="text-2xl font-bold text-blue-600">{schoolFormativeSummary.avgFormative.toFixed(1)}</div>
                   </div>
                   <div className="card p-4 text-center">
-                    <div className="text-xs text-gray-500 mb-1">{ar ? 'متوسط الاختبار' : 'Avg Exam'}</div>
+                    <div className="text-xs text-gray-500 mb-1">{ar ? 'متوسط الاختبار / 100' : 'Avg Exam / 100'}</div>
                     <div className="text-2xl font-bold text-purple-600">{schoolFormativeSummary.avgExam.toFixed(1)}</div>
                   </div>
                   <div className="card p-4 text-center">
-                    <div className="text-xs text-gray-500 mb-1">{ar ? 'الفجوة (اختبار − تكويني)' : 'Gap (Exam − Formative)'}</div>
+                    <div className="text-xs text-gray-500 mb-1">{ar ? 'الفجوة % (تكويني − اختبار)' : 'Gap % (School − Exam)'}</div>
                     <div className={`text-2xl font-bold ${schoolFormativeSummary.avgGap < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {schoolFormativeSummary.avgGap >= 0 ? '+' : ''}{schoolFormativeSummary.avgGap.toFixed(1)}
+                      {schoolFormativeSummary.avgGap >= 0 ? '+' : ''}{schoolFormativeSummary.avgGap.toFixed(1)}%
                     </div>
                   </div>
                   <div className="card p-4 text-center">
@@ -213,7 +213,7 @@ export default function Standard13({ lang }: Props) {
               )}
               {allFormativeGaps.length > 0 && (
                 <div className="card p-4">
-                  <h2 className="font-semibold text-sm mb-4">{ar ? 'الفجوة لكل مادة (اختبار − تكويني)' : 'Gap per Subject (Exam − Formative)'}</h2>
+                  <h2 className="font-semibold text-sm mb-4">{ar ? 'الفجوة % لكل مادة (تكويني − اختبار) / الدرجة الفصلية' : 'Gap % per Subject (School − Exam) / Semester Grade'}</h2>
                   <ResponsiveContainer width="100%" height={240}>
                     <BarChart
                       data={allFormativeGaps.map(g => ({ name: subjectName(g.subjectCode), gap: g.gap ?? 0 }))}
@@ -222,9 +222,9 @@ export default function Standard13({ lang }: Props) {
                       <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                       <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}`} />
+                      <Tooltip formatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`} />
                       <ReferenceLine y={0} stroke="#6b7280" />
-                      <Bar dataKey="gap" name={ar ? 'الفجوة' : 'Gap'} radius={[3, 3, 0, 0]}>
+                      <Bar dataKey="gap" name={ar ? 'الفجوة %' : 'Gap %'} radius={[3, 3, 0, 0]}>
                         {allFormativeGaps.map((g, i) => (
                           <Cell key={i} fill={(g.gap ?? 0) < 0 ? '#ef4444' : '#22c55e'} />
                         ))}
@@ -243,9 +243,9 @@ export default function Standard13({ lang }: Props) {
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-800">
                     <th className="px-3 py-2 text-start">{ar ? 'المادة' : 'Subject'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'متوسط التكويني' : 'Avg Formative'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'متوسط الاختبار' : 'Avg Exam'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'الفجوة' : 'Gap'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'متوسط التكويني /100' : 'Avg Formative /100'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'متوسط الاختبار /100' : 'Avg Exam /100'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'الفجوة %' : 'Gap %'}</th>
                     <th className="px-3 py-2 text-center">{ar ? 'طلاب اختبار أعلى' : 'Exam Higher'}</th>
                     <th className="px-3 py-2 text-center">{ar ? 'طلاب اختبار أقل' : 'Exam Lower'}</th>
                   </tr>
@@ -282,9 +282,9 @@ export default function Standard13({ lang }: Props) {
                       <thead>
                         <tr className="bg-gray-50 dark:bg-gray-800 text-xs">
                           <th className="px-2 py-1.5 text-start">{ar ? 'المادة' : 'Subject'}</th>
-                          <th className="px-2 py-1.5 text-center">{ar ? 'تكويني' : 'Formative'}</th>
-                          <th className="px-2 py-1.5 text-center">{ar ? 'اختبار' : 'Exam'}</th>
-                          <th className="px-2 py-1.5 text-center">{ar ? 'فجوة' : 'Gap'}</th>
+                          <th className="px-2 py-1.5 text-center">{ar ? 'تكويني /100' : 'Formative /100'}</th>
+                          <th className="px-2 py-1.5 text-center">{ar ? 'اختبار /100' : 'Exam /100'}</th>
+                          <th className="px-2 py-1.5 text-center">{ar ? 'فجوة %' : 'Gap %'}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -319,9 +319,9 @@ export default function Standard13({ lang }: Props) {
                 <>
                   <div className="grid grid-cols-3 gap-4">
                     {[
-                      { label: ar ? 'متوسط ف1' : 'Avg S1', value: schoolSemSummary.avgS1, color: 'text-blue-600' },
-                      { label: ar ? 'متوسط ف2' : 'Avg S2', value: schoolSemSummary.avgS2, color: 'text-indigo-600' },
-                      { label: ar ? 'متوسط ف3' : 'Avg S3', value: schoolSemSummary.avgS3, color: 'text-purple-600' },
+                      { label: ar ? 'متوسط ف1 /100' : 'Avg S1 /100', value: schoolSemSummary.avgS1, color: 'text-blue-600' },
+                      { label: ar ? 'متوسط ف2 /100' : 'Avg S2 /100', value: schoolSemSummary.avgS2, color: 'text-indigo-600' },
+                      { label: ar ? 'متوسط ف3 /100' : 'Avg S3 /100', value: schoolSemSummary.avgS3, color: 'text-purple-600' },
                     ].map(({ label, value, color }) => (
                       <div key={label} className="card p-4 text-center">
                         <div className="text-xs text-gray-500">{label}</div>
@@ -331,14 +331,14 @@ export default function Standard13({ lang }: Props) {
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     {[
-                      { label: ar ? 'فجوة ف1→ف2' : 'S1→S2 Gap', value: schoolSemSummary.gapS1S2 },
-                      { label: ar ? 'فجوة ف2→ف3' : 'S2→S3 Gap', value: schoolSemSummary.gapS2S3 },
-                      { label: ar ? 'فجوة ف1→ف3' : 'S1→S3 Gap', value: schoolSemSummary.gapS1S3 },
+                      { label: ar ? 'فجوة % ف1→ف2' : 'S1→S2 Gap %', value: schoolSemSummary.gapS1S2 },
+                      { label: ar ? 'فجوة % ف2→ف3' : 'S2→S3 Gap %', value: schoolSemSummary.gapS2S3 },
+                      { label: ar ? 'فجوة % ف1→ف3' : 'S1→S3 Gap %', value: schoolSemSummary.gapS1S3 },
                     ].map(({ label, value }) => (
                       <div key={label} className="card p-4 text-center">
                         <div className="text-xs text-gray-500">{label}</div>
                         <div className={`text-2xl font-bold mt-1 ${value < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                          {value >= 0 ? '+' : ''}{value.toFixed(1)}
+                          {value >= 0 ? '+' : ''}{value.toFixed(1)}%
                         </div>
                       </div>
                     ))}
@@ -384,12 +384,12 @@ export default function Standard13({ lang }: Props) {
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-800">
                     <th className="px-3 py-2 text-start">{ar ? 'المادة' : 'Subject'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'ف1' : 'S1'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'ف2' : 'S2'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'ف3' : 'S3'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'ف1→ف2' : 'S1→S2'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'ف2→ف3' : 'S2→S3'}</th>
-                    <th className="px-3 py-2 text-center">{ar ? 'ف1→ف3' : 'S1→S3'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'ف1 /100' : 'S1 /100'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'ف2 /100' : 'S2 /100'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'ف3 /100' : 'S3 /100'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'فجوة% ف1→ف2' : 'Gap% S1→S2'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'فجوة% ف2→ف3' : 'Gap% S2→S3'}</th>
+                    <th className="px-3 py-2 text-center">{ar ? 'فجوة% ف1→ف3' : 'Gap% S1→S3'}</th>
                     <th className="px-3 py-2 text-center">{ar ? 'أولوية' : 'Priority'}</th>
                   </tr>
                 </thead>
@@ -445,10 +445,10 @@ export default function Standard13({ lang }: Props) {
                         <thead>
                           <tr className="bg-gray-50 dark:bg-gray-800">
                             <th className="px-2 py-1.5 text-start">{ar ? 'المادة' : 'Subject'}</th>
-                            <th className="px-2 py-1.5 text-center">{ar ? 'ف1' : 'S1'}</th>
-                            <th className="px-2 py-1.5 text-center">{ar ? 'ف2' : 'S2'}</th>
-                            <th className="px-2 py-1.5 text-center">{ar ? 'ف3' : 'S3'}</th>
-                            <th className="px-2 py-1.5 text-center min-w-[120px]">{ar ? 'فجوة ف1→ف3' : 'S1→S3 Gap'}</th>
+                            <th className="px-2 py-1.5 text-center">{ar ? 'ف1 /100' : 'S1 /100'}</th>
+                            <th className="px-2 py-1.5 text-center">{ar ? 'ف2 /100' : 'S2 /100'}</th>
+                            <th className="px-2 py-1.5 text-center">{ar ? 'ف3 /100' : 'S3 /100'}</th>
+                            <th className="px-2 py-1.5 text-center min-w-[130px]">{ar ? 'فجوة% ف1→ف3' : 'Gap% S1→S3'}</th>
                           </tr>
                         </thead>
                         <tbody>
