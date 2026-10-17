@@ -13,6 +13,9 @@ const translations = {
     nav_reports: 'التقارير',
     nav_outcomes: 'مخرجات التعلم',
     nav_settings: 'الإعدادات',
+    nav_standard11: 'معيار 1.1 التحصيل',
+    nav_standard12: 'معيار 1.2 التقدم',
+    nav_standard13: 'معيار 1.3 الفجوات',
 
     // Common
     year: 'العام الدراسي',
@@ -273,6 +276,9 @@ const translations = {
     nav_reports: 'Reports',
     nav_outcomes: 'Learning Outcomes',
     nav_settings: 'Settings',
+    nav_standard11: 'Standard 1.1 Achievement',
+    nav_standard12: 'Standard 1.2 Progress',
+    nav_standard13: 'Standard 1.3 Gaps',
 
     year: 'Academic Year',
     grade: 'Grade',

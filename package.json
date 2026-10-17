@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node_modules/.bin/tsc && node_modules/.bin/vite build",
     "preview": "vite preview",
     "worker:dev": "wrangler pages dev dist --d1=DB",
     "worker:deploy": "wrangler pages deploy dist"

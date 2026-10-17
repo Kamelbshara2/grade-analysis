@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Upload, BarChart2, TrendingUp,
+  LayoutDashboard, Upload, BarChart2, BarChart3, TrendingUp,
   Target, GitCompare, FileText, Settings,
   User, BookMarked, GraduationCap, Award, Printer,
 } from 'lucide-react'
@@ -42,6 +42,15 @@ const NAV_GROUPS = [
     items: [
       { to: '/achievement', icon: Award,  key: 'nav_achievement' as const },
       { to: '/gap',         icon: Target, key: 'nav_gap' as const },
+    ],
+  },
+  {
+    labelAr: 'المعايير الأكاديمية',
+    labelEn: 'Academic Standards',
+    items: [
+      { to: '/standard11', icon: BarChart3,  key: 'nav_standard11' as const },
+      { to: '/standard12', icon: TrendingUp, key: 'nav_standard12' as const },
+      { to: '/standard13', icon: Target,     key: 'nav_standard13' as const },
     ],
   },
   {

@@ -13,6 +13,9 @@ import Settings from '@/pages/Settings'
 import StudentProfile from '@/pages/StudentProfile'
 import Methodology from '@/pages/Methodology'
 import PrintReport from '@/pages/PrintReport'
+import Standard11 from '@/pages/Standard11'
+import Standard12 from '@/pages/Standard12'
+import Standard13 from '@/pages/Standard13'
 import Login from '@/pages/Login'
 import type { Language } from '@/types'
 import { getCurrentLanguage, setLanguage } from '@/i18n/translations'
@@ -91,6 +94,9 @@ export default function App() {
           <Route path="/methodology" element={<Methodology lang={lang} />} />
           <Route path="/settings" element={<Settings lang={lang} onChangeLang={changeLanguage} />} />
           <Route path="/print-report" element={<PrintReport lang={lang} />} />
+          <Route path="/standard11" element={<Standard11 lang={lang} />} />
+          <Route path="/standard12" element={<Standard12 lang={lang} />} />
+          <Route path="/standard13" element={<Standard13 lang={lang} />} />
         </Route>
       </Routes>
     </BrowserRouter>
