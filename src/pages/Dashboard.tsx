@@ -81,9 +81,9 @@ export default function Dashboard({ lang }: DashboardProps) {
   // ── KPIs ──────────────────────────────────────────────
   const kpi = useMemo(() => {
     if (!yearRecords.length) return null
-    const pass = yearRecords.filter(r => r.status === 'pass').length
-    const total = yearRecords.length
     const avgs = yearRecords.map(r => r.annualAvg).filter((v): v is number => v !== null)
+    const pass = yearRecords.filter(r => r.annualAvg !== null && r.annualAvg >= getPassMark(getCycle(r.grade))).length
+    const total = yearRecords.length
     const above90 = avgs.filter(v => v >= 90).length
     const mean = avgs.length > 0 ? avgs.reduce((a, b) => a + b, 0) / avgs.length : 0
     return {
@@ -142,7 +142,7 @@ export default function Dashboard({ lang }: DashboardProps) {
     return [...map.entries()]
       .sort(([a], [b]) => a - b)
       .map(([grade, recs]) => {
-        const pass = recs.filter(r => r.status === 'pass').length
+        const pass = recs.filter(r => r.annualAvg !== null && r.annualAvg >= getPassMark(getCycle(r.grade))).length
         const avgs = recs.map(r => r.annualAvg).filter((v): v is number => v !== null)
         const above90 = avgs.filter(v => v >= 90).length
         const mean = avgs.length > 0 ? avgs.reduce((a, b) => a + b, 0) / avgs.length : 0
