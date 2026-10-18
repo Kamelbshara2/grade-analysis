@@ -5,7 +5,6 @@ const SUBJECT_PATTERNS: Array<{ pattern: RegExp; code: SubjectCode }> = [
   { pattern: /^الأحياء/, code: 'biology' },
   { pattern: /^الفيزياء/, code: 'physics' },
   { pattern: /^الكيمياء/, code: 'chemistry' },
-  { pattern: /^العلوم الصحية/, code: 'health_science' },
   { pattern: /^العلوم$/, code: 'science' },
   { pattern: /^العلوم\s*$/, code: 'science' },
   { pattern: /^التربية الإسلامية/, code: 'islamic' },
@@ -17,6 +16,7 @@ const SUBJECT_PATTERNS: Array<{ pattern: RegExp; code: SubjectCode }> = [
 
 // Subjects to completely ignore
 const IGNORED_SUBJECTS = new Set([
+  'العلوم الصحية',
   'التربية البدنية والصحية',
   'الحوسبة والتصميم الإبداعي والابتكار',
   'السلوك',
@@ -58,7 +58,6 @@ export const SUBJECT_LABELS: Record<SubjectCode, { ar: string; en: string }> = {
   physics: { ar: 'الفيزياء', en: 'Physics' },
   chemistry: { ar: 'الكيمياء', en: 'Chemistry' },
   biology: { ar: 'الأحياء', en: 'Biology' },
-  health_science: { ar: 'العلوم الصحية', en: 'Health Science' },
 }
 
 // Which subjects are relevant per cycle
@@ -90,7 +89,6 @@ export function getCycleSubjects(cycle: Cycle): SubjectCode[] {
 export function isSubjectRelevantForGrade(subject: SubjectCode, grade: number): boolean {
   if (subject === 'science') return grade <= 10   // grades 5-8, 9-10 general
   if (subject === 'biology' || subject === 'chemistry' || subject === 'physics') return grade >= 9
-  if (subject === 'health_science') return false  // excluded from all analysis
   return true
 }
 

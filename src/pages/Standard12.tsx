@@ -19,7 +19,7 @@ type Section = 'school' | 'subject' | 'grade'
 const SUBJECT_COLORS: Record<SubjectCode, string> = {
   arabic: '#6366f1', english: '#22c55e', math: '#f59e0b', islamic: '#ec4899',
   social: '#14b8a6', science: '#8b5cf6', physics: '#ef4444', chemistry: '#f97316',
-  biology: '#06b6d4', health_science: '#64748b',
+  biology: '#06b6d4',
 }
 
 const GRADE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#8b5cf6', '#ef4444', '#f97316']

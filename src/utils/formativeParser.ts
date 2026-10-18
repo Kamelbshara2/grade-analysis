@@ -14,7 +14,7 @@ const SUBJECT_NAME_MAP: Record<string, SubjectCode> = {
   'الفيزياء': 'physics',
   'الكيمياء': 'chemistry',
   'الأحياء': 'biology',
-  'علوم الصحة': 'health_science',
+
 }
 
 function normalizeSubjectName(name: string): SubjectCode | null {
