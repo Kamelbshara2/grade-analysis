@@ -171,7 +171,12 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
     }).filter(r =>
       r.fs1Rate !== null || r.es1Rate !== null || r.s2Rate !== null ||
       r.fs3Rate !== null || r.es3Rate !== null
-    )
+    ).sort((a, b) => {
+      // Sort by formative score descending (S1 preferred, fallback S3)
+      const aScore = a.fs1Rate ?? a.fs3Rate ?? a.es1Rate ?? a.es3Rate ?? 0
+      const bScore = b.fs1Rate ?? b.fs3Rate ?? b.es1Rate ?? b.es3Rate ?? 0
+      return bScore - aScore
+    })
 
     // School-wide summary (unfiltered) — all scores already /100
     const allFS = dataStore.getFormativeScores(yearId)
