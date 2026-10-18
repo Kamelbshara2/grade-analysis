@@ -2,6 +2,7 @@ import type { AppData, YearData, StudentRecord, DiagnosticScore, LearningOutcome
 
 const STORAGE_KEY = 'grade_analysis_v1'
 const API_LOADED_KEY = 'grade_analysis_api_loaded'
+const NEON_SYNCED_KEY = 'grade_analysis_neon_synced_v1'
 
 function loadData(): AppData {
   try {
@@ -69,8 +70,64 @@ export const dataStore = {
       } catch (err) {
         console.warn('Failed to load data from API, using localStorage only:', err)
       }
+
+      // One-time migration: push any old localStorage data to Neon
+      if (!localStorage.getItem(NEON_SYNCED_KEY)) {
+        this.syncAllToNeon()
+          .then(() => localStorage.setItem(NEON_SYNCED_KEY, 'true'))
+          .catch(e => console.warn('One-time Neon sync failed:', e))
+      }
     })()
     return _initPromise
+  },
+
+  /** Push all localStorage data to Neon (one-time migration for old data) */
+  async syncAllToNeon(): Promise<void> {
+    for (const [yearId, yd] of Object.entries(_data.years)) {
+      const calls: Promise<unknown>[] = []
+
+      if (yd.records.length > 0) {
+        calls.push(fetch('/api/students', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yearId, records: yd.records }),
+        }))
+      }
+      if (yd.diagnosticScores && yd.diagnosticScores.length > 0) {
+        calls.push(fetch('/api/diagnostic-scores', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yearId, scores: yd.diagnosticScores }),
+        }))
+      }
+      if (yd.formativeScores && yd.formativeScores.length > 0) {
+        calls.push(fetch('/api/formative-scores', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yearId, scores: yd.formativeScores }),
+        }))
+      }
+      if (yd.examScores && yd.examScores.length > 0) {
+        calls.push(fetch('/api/exam-scores', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yearId, scores: yd.examScores }),
+        }))
+      }
+      // Term scores grouped by semester
+      for (const sem of [1, 2, 3] as const) {
+        const semScores = (yd.termScores || []).filter(s => s.semester === sem)
+        if (semScores.length > 0) {
+          calls.push(fetch('/api/term-scores', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ yearId, semester: sem, scores: semScores }),
+          }))
+        }
+      }
+
+      await Promise.all(calls)
+    }
   },
 
   /** Reload in-memory data from localStorage (call after external mutation) */
@@ -126,6 +183,11 @@ export const dataStore = {
       _data.years[yearId].diagnosticScores = scores
     }
     saveData(_data)
+    fetch('/api/diagnostic-scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, scores }),
+    }).catch(e => console.warn('Neon sync diagnostic-scores failed:', e))
   },
 
   getFormativeScores(yearId: string): FormativeScore[] {
@@ -139,6 +201,11 @@ export const dataStore = {
       _data.years[yearId].formativeScores = scores
     }
     saveData(_data)
+    fetch('/api/formative-scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, scores }),
+    }).catch(e => console.warn('Neon sync formative-scores failed:', e))
   },
 
   getExamScores(yearId: string): ExamScore[] {
@@ -152,6 +219,11 @@ export const dataStore = {
       _data.years[yearId].examScores = scores
     }
     saveData(_data)
+    fetch('/api/exam-scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, scores }),
+    }).catch(e => console.warn('Neon sync exam-scores failed:', e))
   },
 
   getTermScores(yearId: string, semester?: 1 | 2 | 3): TermScore[] {

@@ -13,12 +13,13 @@ export default async function handler(request) {
   try {
     const sql = neon(url)
 
-    const [records, subjects, termScores, formative, exam] = await Promise.all([
+    const [records, subjects, termScores, formative, exam, diagnostic] = await Promise.all([
       sql`SELECT * FROM student_records ORDER BY year_id, grade, section`,
       sql`SELECT * FROM subject_grades`,
       sql`SELECT * FROM term_scores`,
       sql`SELECT * FROM formative_scores`,
       sql`SELECT * FROM exam_scores`,
+      sql`SELECT * FROM diagnostic_scores`,
     ])
 
     const subjectMap = {}
@@ -105,6 +106,16 @@ export default async function handler(request) {
         s1: row.s1 !== null ? Number(row.s1) : null,
         s2: row.s2 !== null ? Number(row.s2) : null,
         s3: row.s3 !== null ? Number(row.s3) : null,
+      })
+    }
+
+    for (const row of diagnostic) {
+      ensureYear(row.year_id)
+      years[row.year_id].diagnosticScores.push({
+        studentId: row.student_id,
+        yearId: row.year_id,
+        subjectCode: row.subject_code,
+        score: row.score !== null ? Number(row.score) : null,
       })
     }
 
