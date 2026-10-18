@@ -8,8 +8,7 @@ export type SubjectCode =
   | 'science'
   | 'physics'
   | 'chemistry'
-  | 'biology'
-  | 'health_science';
+  | 'biology';
 
 export type Track = 'general' | 'advanced';
 export type Cycle = 2 | 3;

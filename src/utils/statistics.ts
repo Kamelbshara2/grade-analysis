@@ -599,7 +599,7 @@ export function computeAchievementIndicators(
 ): AchievementIndicator[] {
   const subjectCodes = [...new Set(
     records.flatMap(r => Object.keys(r.grades) as SubjectCode[])
-  )]
+  )].filter(code => ANALYSIS_SUBJECTS.includes(code))
 
   return subjectCodes.map(subjectCode => {
     const cycle: Cycle = records.find(r => r.grades[subjectCode])?.cycle ?? 3

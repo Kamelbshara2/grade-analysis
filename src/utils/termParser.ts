@@ -6,7 +6,7 @@ import type { TermScore, SubjectCode, Nationality } from '@/types'
  * matching with Arabic and English keyword variants.
  *
  * Priority order (most-specific first):
- * chemistry → physics → biology → health_science → science →
+ * chemistry → physics → biology → science →
  * arabic → english → math → islamic → social
  */
 export function normalizeSubjectName(col: string): SubjectCode | null {
@@ -34,13 +34,6 @@ export function normalizeSubjectName(col: string): SubjectCode | null {
     lower.includes('biology') ||
     (lower.includes('bio') && !lower.includes('biography'))
   ) return 'biology'
-
-  // health_science: health, علوم الصحة, صحة
-  if (
-    lower.includes('علوم الصحة') ||
-    lower.includes('صحة') ||
-    lower.includes('health')
-  ) return 'health_science'
 
   // science: science, علوم (more-specific subjects take priority above)
   if (lower.includes('علوم') || lower.includes('science')) return 'science'

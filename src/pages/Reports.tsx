@@ -881,12 +881,11 @@ function FormativeGapReport({ lang, filter }: { lang: Language; filter: Analysis
   const allFormative: FormativeScore[] = dataStore.getFormativeScores(yearId)
   const allExam: ExamScore[] = dataStore.getExamScores(yearId)
 
-  // Apply grade filter — health_science has no exam so exclude from gap analysis
   const formativeScores = useMemo(() =>
-    allFormative.filter(s => s.subjectCode !== 'health_science' && (!filter.grade || s.grade === filter.grade)),
+    allFormative.filter(s => !filter.grade || s.grade === filter.grade),
     [allFormative, filter.grade])
   const examScores = useMemo(() =>
-    allExam.filter(s => s.subjectCode !== 'health_science' && (!filter.grade || s.grade === filter.grade)),
+    allExam.filter(s => !filter.grade || s.grade === filter.grade),
     [allExam, filter.grade])
 
   const hasFormative = allFormative.length > 0
