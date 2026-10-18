@@ -4,10 +4,10 @@ import {
   Upload, Users, CheckCircle, XCircle, Award,
   AlertTriangle, TrendingUp, BarChart2, ChevronLeft,
 } from 'lucide-react'
-import type { Language, SubjectCode, StudentRecord } from '@/types'
+import type { Language, SubjectCode, StudentRecord, Nationality } from '@/types'
 import { dataStore } from '@/store/dataStore'
 import { SUBJECT_LABELS, getPassMark, getCycle } from '@/utils/subjectMapping'
-import { round2 } from '@/utils/statistics'
+import { round2, filterRecords } from '@/utils/statistics'
 import clsx from 'clsx'
 
 interface DashboardProps {
@@ -72,10 +72,11 @@ export default function Dashboard({ lang }: DashboardProps) {
   const ar = lang === 'ar'
   const years = dataStore.getYears()
   const [selectedYear, setSelectedYear] = useState(() => years[years.length - 1] ?? '')
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
 
   const yearRecords: StudentRecord[] = useMemo(
-    () => dataStore.getRecordsByYear(selectedYear),
-    [selectedYear],
+    () => filterRecords(dataStore.getRecordsByYear(selectedYear), { nationality }),
+    [selectedYear, nationality],
   )
 
   // ── KPIs ──────────────────────────────────────────────
@@ -224,6 +225,12 @@ export default function Dashboard({ lang }: DashboardProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-500">{ar ? 'الجنسية:' : 'Nationality:'}</label>
+          <select className="input w-auto py-1.5 text-sm" value={nationality ?? ''} onChange={e => setNationality((e.target.value as Nationality) || undefined)}>
+            <option value="">{ar ? 'الكل' : 'All'}</option>
+            <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+            <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
+          </select>
           <label className="text-sm text-gray-500">{ar ? 'العام الدراسي:' : 'Year:'}</label>
           <select
             className="input w-auto py-1.5 text-sm font-medium"

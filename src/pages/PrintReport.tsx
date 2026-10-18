@@ -20,7 +20,7 @@ import {
   SUBJECT_LABELS, ANALYSIS_SUBJECTS, getCycle, getPassMark,
   isSubjectRelevantForGrade,
 } from '@/utils/subjectMapping'
-import type { Language, SubjectCode } from '@/types'
+import type { Language, SubjectCode, Nationality } from '@/types'
 import clsx from 'clsx'
 
 interface PrintReportProps { lang: Language }
@@ -198,8 +198,12 @@ export default function PrintReport({ lang }: PrintReportProps) {
   const [yearId, setYearId] = useState(years.slice(-1)[0] || '')
   const [semester, setSemester] = useState<'annual' | '1' | '2' | '3'>('annual')
   const [schoolName, setSchoolName] = useState('مدرسة خالد بن الوليد')
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
 
-  const records = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
+  const records = useMemo(() => {
+    const raw = dataStore.getRecordsByYear(yearId)
+    return nationality ? filterRecords(raw, { nationality }) : raw
+  }, [yearId, nationality])
   const diagScores = useMemo(() => dataStore.getDiagnosticScores(yearId), [yearId])
   const termScoresT1 = useMemo(() => dataStore.getTermScores(yearId, 1), [yearId])
   const termScoresT2 = useMemo(() => dataStore.getTermScores(yearId, 2), [yearId])
@@ -446,6 +450,14 @@ export default function PrintReport({ lang }: PrintReportProps) {
             <option value="1">{ar ? 'الفصل الأول' : 'Term 1'}</option>
             <option value="2">{ar ? 'الفصل الثاني' : 'Term 2'}</option>
             <option value="3">{ar ? 'الفصل الثالث' : 'Term 3'}</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">{ar ? 'الجنسية' : 'Nationality'}</label>
+          <select className="input" value={nationality ?? ''} onChange={e => setNationality((e.target.value as Nationality) || undefined)}>
+            <option value="">{ar ? 'الكل' : 'All'}</option>
+            <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+            <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
           </select>
         </div>
         <div>
