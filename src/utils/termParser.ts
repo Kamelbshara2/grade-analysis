@@ -328,7 +328,10 @@ export function parseNoorFormativeExam(buffer: ArrayBuffer, yearId: string): {
 
   const { sectionCol, nationalityCol } = detectMetaCols(row1, row2)
 
-  // Scan ALL of row2 for formative/exam labels; resolve subject from row1 (scan leftward)
+  // Scan ALL of row2 for formative/exam labels; resolve subject from row1.
+  // Formative (التقييم على مستوى المدرسة) is always 1 col LEFT of the subject name anchor in row1,
+  // so scan RIGHTWARD from c to find it. Exam (اختبار نهاية الفصل) aligns with the subject name,
+  // so scan LEFTWARD (works in both term1 and term3 layouts).
   const codeFormativeCols = new Map<SubjectCode, number>()
   const codeExamCols = new Map<SubjectCode, number>()
 
@@ -336,12 +339,21 @@ export function parseNoorFormativeExam(buffer: ArrayBuffer, yearId: string): {
     const label = String(row2[c] ?? '').trim()
     if (label !== 'التقييم على مستوى المدرسة' && label !== 'اختبار نهاية الفصل') continue
 
-    // Find subject name: scan row1 leftward from c
     let subjectName = ''
-    for (let sc = c; sc >= 0; sc--) {
-      const v = String(row1[sc] ?? '').trim()
-      if (v) { subjectName = v; break }
+    if (label === 'التقييم على مستوى المدرسة') {
+      // Formative: subject name is at c or to the right (term3 layout has formative one col before subject)
+      for (let sc = c; sc <= Math.min(c + 3, row1.length - 1); sc++) {
+        const v = String(row1[sc] ?? '').trim()
+        if (v) { subjectName = v; break }
+      }
+    } else {
+      // Exam: subject name is at c or to the left
+      for (let sc = c; sc >= 0; sc--) {
+        const v = String(row1[sc] ?? '').trim()
+        if (v) { subjectName = v; break }
+      }
     }
+
     const code = normalizeSubjectName(subjectName)
     if (!code) continue
 
