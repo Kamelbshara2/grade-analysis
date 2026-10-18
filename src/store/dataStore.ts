@@ -126,6 +126,11 @@ export const dataStore = {
       _data.years[yearId].diagnosticScores = scores
     }
     saveData(_data)
+    fetch('/api/diagnostic-scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, scores }),
+    }).catch(e => console.warn('Neon sync diagnostic-scores failed:', e))
   },
 
   getFormativeScores(yearId: string): FormativeScore[] {
@@ -139,6 +144,11 @@ export const dataStore = {
       _data.years[yearId].formativeScores = scores
     }
     saveData(_data)
+    fetch('/api/formative-scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, scores }),
+    }).catch(e => console.warn('Neon sync formative-scores failed:', e))
   },
 
   getExamScores(yearId: string): ExamScore[] {
@@ -152,6 +162,11 @@ export const dataStore = {
       _data.years[yearId].examScores = scores
     }
     saveData(_data)
+    fetch('/api/exam-scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, scores }),
+    }).catch(e => console.warn('Neon sync exam-scores failed:', e))
   },
 
   getTermScores(yearId: string, semester?: 1 | 2 | 3): TermScore[] {
