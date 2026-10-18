@@ -310,8 +310,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
       const yearTo = years[i + 1]
       const recsFrom = allYearRecords.find(y => y.yearId === yearFrom)?.records ?? []
       const recsTo = allYearRecords.find(y => y.yearId === yearTo)?.records ?? []
-      const mapFrom = new Map(recsFrom.filter(r => r.annualAvg !== null).map(r => [r.student, r.annualAvg as number]))
-      const mapTo = new Map(recsTo.filter(r => r.annualAvg !== null).map(r => [r.student, r.annualAvg as number]))
+      const mapFrom = new Map(recsFrom.filter(r => r.annualAvg !== null).map(r => [r.student.id, r.annualAvg as number]))
+      const mapTo = new Map(recsTo.filter(r => r.annualAvg !== null).map(r => [r.student.id, r.annualAvg as number]))
       let improved = 0, regressed = 0, stable = 0
       for (const [id, avgFrom] of mapFrom) {
         const avgTo = mapTo.get(id)
