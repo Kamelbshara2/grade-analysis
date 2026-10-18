@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { dataStore } from '@/store/dataStore'
 import { computeAchievementIndicators, computeGradeStats, round2 } from '@/utils/statistics'
-import { ANALYSIS_SUBJECTS, CORE_SUBJECTS, SUBJECT_LABELS } from '@/utils/subjectMapping'
+import { ANALYSIS_SUBJECTS, SUBJECT_LABELS } from '@/utils/subjectMapping'
 import type { Language, SubjectCode, Cycle, Nationality } from '@/types'
 import { getCycle, getPassMark } from '@/utils/subjectMapping'
 
@@ -258,7 +258,7 @@ export default function Standard11({ lang }: Props) {
         const cycle: Cycle = getCycle(r.grade)
         const passMark = getPassMark(cycle)
         const scores: number[] = []
-        for (const subj of CORE_SUBJECTS) {
+        for (const subj of ANALYSIS_SUBJECTS) {
           const g = r.grades[subj]
           if (!g) continue
           const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
@@ -301,7 +301,7 @@ export default function Standard11({ lang }: Props) {
 
   // ── Subject: annual stats (core subjects) ────────────────────────────────
   const subjectAnnualData = useMemo(() => {
-    return CORE_SUBJECTS.map(subj => {
+    return ANALYSIS_SUBJECTS.map(subj => {
       const relevantRecords = records.filter(r => r.grades[subj] != null)
       if (relevantRecords.length === 0) return { subj, passRate: null, above75Rate: null, level: null, count: 0 }
       const indicators = computeAchievementIndicators(relevantRecords, 'annual')
@@ -381,7 +381,7 @@ export default function Standard11({ lang }: Props) {
   // ── Achievement Indicator 1.1 ─────────────────────────────────────────────
   const achievementRows = useMemo(() => {
     const indicators = computeAchievementIndicators(records, 'annual')
-    return indicators.filter(ind => CORE_SUBJECTS.includes(ind.subjectCode))
+    return indicators.filter(ind => ANALYSIS_SUBJECTS.includes(ind.subjectCode))
   }, [records])
 
   const schoolAchievement = useMemo(() => {
@@ -396,7 +396,7 @@ export default function Standard11({ lang }: Props) {
   // Subject breakdown for selected grade
   const gradeSubjectBreakdown = useMemo(() => {
     const gradeRecs = records.filter(r => r.grade === activeGrade)
-    return CORE_SUBJECTS.map(subj => {
+    return ANALYSIS_SUBJECTS.map(subj => {
       const scores = gradeRecs.map(r => r.grades[subj]?.annual).filter((v): v is number => v !== null && v !== undefined)
       if (scores.length === 0) return null
       const pm = getPassMark(getCycle(activeGrade))
