@@ -6,14 +6,14 @@ import {
 import { dataStore } from '@/store/dataStore'
 import {
   computeSchoolTrendPoints, computeSubjectTrendPoints,
-  computeGradeStats, round2,
+  computeGradeStats, computeProgressRates, round2,
 } from '@/utils/statistics'
 import { ANALYSIS_SUBJECTS, SUBJECT_LABELS, isSubjectRelevantForGrade } from '@/utils/subjectMapping'
 import type { Language, SubjectCode } from '@/types'
 
 interface Props { lang: Language }
 
-type Part = 'multiyear' | 'withinyear'
+type Part = 'multiyear' | 'withinyear' | 'progress'
 type Section = 'school' | 'subject' | 'grade'
 
 const SUBJECT_COLORS: Record<SubjectCode, string> = {
@@ -152,6 +152,9 @@ export default function Standard12({ lang }: Props) {
 
   const grades = useMemo(() => [...new Set(latestRecords.map(r => r.grade))].sort((a, b) => a - b), [latestRecords])
 
+  // ---- Progress/regression rates ----
+  const progressRates = useMemo(() => computeProgressRates(allYearRecords), [allYearRecords])
+
   if (!latestYear) {
     return <div className="p-8 text-center text-gray-500">{ar ? 'لا توجد بيانات' : 'No data'}</div>
   }
@@ -181,8 +184,8 @@ export default function Standard12({ lang }: Props) {
       </div>
 
       {/* Part toggle */}
-      <div className="inline-flex rounded-lg border dark:border-gray-700 overflow-hidden">
-        {(['multiyear', 'withinyear'] as Part[]).map(p => (
+      <div className="inline-flex rounded-lg border dark:border-gray-700 overflow-hidden flex-wrap">
+        {(['multiyear', 'withinyear', 'progress'] as Part[]).map(p => (
           <button
             key={p}
             onClick={() => { setPart(p); setSection('school') }}
@@ -194,7 +197,9 @@ export default function Standard12({ lang }: Props) {
           >
             {p === 'multiyear'
               ? (ar ? 'الجزء 1 — متعدد السنوات' : 'Part 1 — Multi-Year')
-              : (ar ? 'الجزء 2 — داخل العام' : 'Part 2 — Within Year')}
+              : p === 'withinyear'
+              ? (ar ? 'الجزء 2 — داخل العام' : 'Part 2 — Within Year')
+              : (ar ? 'الجزء 3 — نسب التقدم' : 'Part 3 — Progress Rates')}
           </button>
         ))}
       </div>
@@ -496,6 +501,269 @@ export default function Standard12({ lang }: Props) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ===== PART 3: PROGRESS / REGRESSION RATES ===== */}
+      {part === 'progress' && (
+        <>
+          {/* School — overall per-year + within-year */}
+          {section === 'school' && (
+            <div className="space-y-6">
+              {/* Year-to-year transitions */}
+              {progressRates[0]?.transitions.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
+                    {ar ? 'التقدم والتراجع بين السنوات (إجمالي المدرسة)' : 'Year-to-Year Progress / Regression (School Total)'}
+                  </h2>
+                  {progressRates[0].transitions.map(t => {
+                    // Aggregate across all subjects for this transition
+                    let totImp = 0, totReg = 0, totSta = 0
+                    for (const sp of progressRates) {
+                      const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
+                      if (tr) { totImp += tr.improved; totReg += tr.regressed; totSta += tr.stable }
+                    }
+                    const tot = totImp + totReg + totSta
+                    return (
+                      <div key={t.yearFrom} className="card p-4">
+                        <div className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">
+                          {t.yearFrom} → {t.yearTo}
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center">
+                            <div className="text-xs text-gray-500 mb-1">{ar ? 'تقدموا' : 'Improved'}</div>
+                            <div className="text-2xl font-bold text-green-600">{tot > 0 ? ((totImp / tot) * 100).toFixed(1) : '0'}%</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{totImp} {ar ? 'طالب' : 'students'}</div>
+                          </div>
+                          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                            <div className="text-xs text-gray-500 mb-1">{ar ? 'مستقرون' : 'Stable'}</div>
+                            <div className="text-2xl font-bold text-gray-500">{tot > 0 ? ((totSta / tot) * 100).toFixed(1) : '0'}%</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{totSta} {ar ? 'طالب' : 'students'}</div>
+                          </div>
+                          <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3 text-center">
+                            <div className="text-xs text-gray-500 mb-1">{ar ? 'تراجعوا' : 'Regressed'}</div>
+                            <div className="text-2xl font-bold text-red-500">{tot > 0 ? ((totReg / tot) * 100).toFixed(1) : '0'}%</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{totReg} {ar ? 'طالب' : 'students'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Within-year semester transitions */}
+              {progressRates[0]?.withinYear && (
+                <div className="space-y-3">
+                  <h2 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
+                    {ar ? `التقدم داخل العام ${progressRates[0].withinYear.yearId} (إجمالي المدرسة)` : `Within-Year Progress ${progressRates[0].withinYear?.yearId}`}
+                  </h2>
+                  {(['s1ToS2', 's2ToS3', 's1ToS3'] as const).map(key => {
+                    let imp = 0, reg = 0, tot = 0
+                    for (const sp of progressRates) {
+                      const wy = sp.withinYear
+                      if (!wy) continue
+                      imp += wy[key].improved; reg += wy[key].regressed; tot += wy[key].total
+                    }
+                    const label = key === 's1ToS2' ? (ar ? 'ف1 → ف2' : 'S1 → S2') : key === 's2ToS3' ? (ar ? 'ف2 → ف3' : 'S2 → S3') : (ar ? 'ف1 → ف3 (كامل العام)' : 'S1 → S3 (Full Year)')
+                    return (
+                      <div key={key} className="card p-3 flex items-center justify-between">
+                        <span className="text-sm font-medium">{label}</span>
+                        <div className="flex gap-4 text-sm">
+                          <span className="text-green-600 font-semibold">▲ {imp} {ar ? 'تقدموا' : 'improved'} {tot > 0 ? `(${((imp / tot) * 100).toFixed(1)}%)` : ''}</span>
+                          <span className="text-red-500 font-semibold">▼ {reg} {ar ? 'تراجعوا' : 'regressed'} {tot > 0 ? `(${((reg / tot) * 100).toFixed(1)}%)` : ''}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Subject — per-subject breakdown */}
+          {section === 'subject' && (
+            <div className="space-y-6">
+              {/* Year-to-year per subject */}
+              {progressRates[0]?.transitions.length > 0 && (
+                <div>
+                  <h2 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-3">
+                    {ar ? 'التقدم والتراجع بين السنوات — حسب المادة' : 'Year-to-Year Progress by Subject'}
+                  </h2>
+                  {progressRates[0].transitions.map(t => (
+                    <div key={t.yearFrom} className="mb-4">
+                      <div className="text-xs font-semibold text-gray-500 mb-2">{t.yearFrom} → {t.yearTo}</div>
+                      <div className="overflow-x-auto card">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-50 dark:bg-gray-800">
+                              <th className="px-3 py-2 text-start">{ar ? 'المادة' : 'Subject'}</th>
+                              <th className="px-2 py-2 text-center">{ar ? 'المقارَنون' : 'Paired'}</th>
+                              <th className="px-2 py-2 text-center text-green-600">{ar ? 'تقدموا' : 'Improved'}</th>
+                              <th className="px-2 py-2 text-center text-gray-400">{ar ? 'مستقرون' : 'Stable'}</th>
+                              <th className="px-2 py-2 text-center text-red-500">{ar ? 'تراجعوا' : 'Regressed'}</th>
+                              <th className="px-2 py-2 text-center">{ar ? 'معدل التغير' : 'Mean Diff'}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {progressRates.map(sp => {
+                              const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
+                              if (!tr || tr.total === 0) return null
+                              return (
+                                <tr key={sp.subject} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                  <td className="px-3 py-2 font-medium">{ar ? sp.subjectNameAr : sp.subjectNameEn}</td>
+                                  <td className="px-2 py-2 text-center text-gray-500">{tr.total}</td>
+                                  <td className="px-2 py-2 text-center">
+                                    <span className="text-green-600 font-semibold">{tr.improved}</span>
+                                    <span className="text-xs text-gray-400 ms-1">({tr.improvedPct.toFixed(1)}%)</span>
+                                  </td>
+                                  <td className="px-2 py-2 text-center text-gray-400">{tr.stable}</td>
+                                  <td className="px-2 py-2 text-center">
+                                    <span className="text-red-500 font-semibold">{tr.regressed}</span>
+                                    <span className="text-xs text-gray-400 ms-1">({tr.regressedPct.toFixed(1)}%)</span>
+                                  </td>
+                                  <td className={`px-2 py-2 text-center font-semibold text-sm ${(tr.meanDiff ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                    {tr.meanDiff !== null ? `${(tr.meanDiff >= 0 ? '+' : '')}${tr.meanDiff.toFixed(2)}` : '—'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Within-year per subject */}
+              {progressRates[0]?.withinYear && (
+                <div>
+                  <h2 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-3">
+                    {ar ? `التقدم داخل العام ${progressRates[0].withinYear.yearId} — حسب المادة` : `Within-Year Progress by Subject`}
+                  </h2>
+                  <div className="overflow-x-auto card">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 dark:bg-gray-800">
+                          <th className="px-3 py-2 text-start">{ar ? 'المادة' : 'Subject'}</th>
+                          <th className="px-2 py-2 text-center" colSpan={2}>{ar ? 'ف1 → ف2' : 'S1→S2'}</th>
+                          <th className="px-2 py-2 text-center" colSpan={2}>{ar ? 'ف2 → ف3' : 'S2→S3'}</th>
+                          <th className="px-2 py-2 text-center" colSpan={2}>{ar ? 'ف1 → ف3' : 'S1→S3'}</th>
+                          <th className="px-2 py-2 text-center">{ar ? 'متوسط الفرق' : 'Mean Diff'}</th>
+                        </tr>
+                        <tr className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-400">
+                          <th className="px-3 py-1"></th>
+                          <th className="px-2 py-1 text-green-600">{ar ? 'تقدم' : '▲'}</th>
+                          <th className="px-2 py-1 text-red-500">{ar ? 'تراجع' : '▼'}</th>
+                          <th className="px-2 py-1 text-green-600">{ar ? 'تقدم' : '▲'}</th>
+                          <th className="px-2 py-1 text-red-500">{ar ? 'تراجع' : '▼'}</th>
+                          <th className="px-2 py-1 text-green-600">{ar ? 'تقدم' : '▲'}</th>
+                          <th className="px-2 py-1 text-red-500">{ar ? 'تراجع' : '▼'}</th>
+                          <th className="px-2 py-1">{ar ? '(ف1→ف3)' : '(S1→S3)'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {progressRates.map(sp => {
+                          const wy = sp.withinYear
+                          if (!wy || wy.s1ToS3.total === 0) return null
+                          return (
+                            <tr key={sp.subject} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                              <td className="px-3 py-2 font-medium">{ar ? sp.subjectNameAr : sp.subjectNameEn}</td>
+                              <td className="px-2 py-2 text-center text-green-600 font-semibold">
+                                {wy.s1ToS2.improved}
+                                {wy.s1ToS2.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS2.improved / wy.s1ToS2.total) * 100).toFixed(0)}%)</span>}
+                              </td>
+                              <td className="px-2 py-2 text-center text-red-500 font-semibold">
+                                {wy.s1ToS2.regressed}
+                                {wy.s1ToS2.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS2.regressed / wy.s1ToS2.total) * 100).toFixed(0)}%)</span>}
+                              </td>
+                              <td className="px-2 py-2 text-center text-green-600 font-semibold">
+                                {wy.s2ToS3.improved}
+                                {wy.s2ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s2ToS3.improved / wy.s2ToS3.total) * 100).toFixed(0)}%)</span>}
+                              </td>
+                              <td className="px-2 py-2 text-center text-red-500 font-semibold">
+                                {wy.s2ToS3.regressed}
+                                {wy.s2ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s2ToS3.regressed / wy.s2ToS3.total) * 100).toFixed(0)}%)</span>}
+                              </td>
+                              <td className="px-2 py-2 text-center text-green-600 font-semibold">
+                                {wy.s1ToS3.improved}
+                                {wy.s1ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS3.improved / wy.s1ToS3.total) * 100).toFixed(0)}%)</span>}
+                              </td>
+                              <td className="px-2 py-2 text-center text-red-500 font-semibold">
+                                {wy.s1ToS3.regressed}
+                                {wy.s1ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS3.regressed / wy.s1ToS3.total) * 100).toFixed(0)}%)</span>}
+                              </td>
+                              <td className={`px-2 py-2 text-center font-semibold text-sm ${(wy.meanS1S3Diff ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                {wy.meanS1S3Diff !== null ? `${(wy.meanS1S3Diff >= 0 ? '+' : '')}${wy.meanS1S3Diff.toFixed(2)}` : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Grade — within-year per grade */}
+          {section === 'grade' && (
+            <div className="space-y-4">
+              {progressRates[0]?.withinYear && (
+                <>
+                  <h2 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
+                    {ar ? `التقدم داخل العام ${progressRates[0].withinYear.yearId} — حسب الصف` : `Within-Year Progress by Grade`}
+                  </h2>
+                  {grades.map(grade => {
+                    const latestRecs = allYearRecords[allYearRecords.length - 1]?.records.filter(r => r.grade === grade) ?? []
+                    if (latestRecs.length === 0) return null
+                    const calcGrade = (fromKey: 's1' | 's2', toKey: 's2' | 's3') => {
+                      let imp = 0, reg = 0, tot = 0
+                      for (const sp of progressRates) {
+                        for (const r of latestRecs) {
+                          if (!isSubjectRelevantForGrade(sp.subject, r.grade)) continue
+                          const g = r.grades[sp.subject]
+                          if (!g) continue
+                          const from = g[fromKey], to = g[toKey]
+                          if (from === null || to === null) continue
+                          tot++
+                          const diff = to - from
+                          const cat = diff > 4 ? 'imp' : diff < -4 ? 'reg' : 'sta'
+                          if (cat === 'imp') imp++
+                          else if (cat === 'reg') reg++
+                        }
+                      }
+                      return { imp, reg, tot }
+                    }
+                    const s12 = calcGrade('s1', 's2'), s23 = calcGrade('s2', 's3'), s13 = calcGrade('s1', 's3')
+                    return (
+                      <div key={grade} className="card p-4">
+                        <div className="font-semibold text-sm mb-3">{ar ? `الصف ${grade}` : `Grade ${grade}`} — {latestRecs.length} {ar ? 'طالب' : 'students'}</div>
+                        <div className="grid grid-cols-3 gap-3 text-sm">
+                          {[
+                            { label: ar ? 'ف1 → ف2' : 'S1→S2', d: s12 },
+                            { label: ar ? 'ف2 → ف3' : 'S2→S3', d: s23 },
+                            { label: ar ? 'ف1 → ف3 (كامل العام)' : 'S1→S3 (Full Year)', d: s13 },
+                          ].map(({ label, d }) => (
+                            <div key={label} className="text-center">
+                              <div className="text-xs text-gray-400 mb-1">{label}</div>
+                              <div className="text-green-600 font-semibold">▲ {d.imp} {d.tot > 0 ? `(${((d.imp / d.tot) * 100).toFixed(0)}%)` : ''}</div>
+                              <div className="text-red-500 font-semibold">▼ {d.reg} {d.tot > 0 ? `(${((d.reg / d.tot) * 100).toFixed(0)}%)` : ''}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+              {!progressRates[0]?.withinYear && (
+                <div className="text-center text-gray-400 py-8">{ar ? 'لا توجد بيانات' : 'No data'}</div>
+              )}
             </div>
           )}
         </>

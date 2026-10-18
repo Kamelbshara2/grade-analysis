@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Printer, ChevronDown } from 'lucide-react'
+import { Printer } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, Cell, LineChart, Line,
@@ -9,12 +9,18 @@ import {
 import { dataStore } from '@/store/dataStore'
 import {
   filterRecords, extractScores, computeAchievementIndicators,
-  computeSubjectStats, computeMultiYearProgress,
-  getProportionLabel, round2,
+  computeSubjectStats, round2,
+  computeSchoolTrendPoints, computeSubjectTrendPoints,
+  computeGradeStats, computeProgressRates,
+  computeFormativeExamGaps, computeSemesterGaps,
+  getProportionLabel,
   type AchievementIndicator,
 } from '@/utils/statistics'
-import { SUBJECT_LABELS, getCycle, getPassMark } from '@/utils/subjectMapping'
-import type { Language, SubjectCode, Cycle } from '@/types'
+import {
+  SUBJECT_LABELS, ANALYSIS_SUBJECTS, getCycle, getPassMark,
+  isSubjectRelevantForGrade,
+} from '@/utils/subjectMapping'
+import type { Language, SubjectCode } from '@/types'
 import clsx from 'clsx'
 
 interface PrintReportProps { lang: Language }
@@ -45,7 +51,6 @@ function levelBg(level: string) {
   return 'bg-red-100 text-red-800 border-red-300'
 }
 
-// ── Descriptive text generator ─────────────────────────────────────────────────
 function genNarrative11(indicators: AchievementIndicator[], semester: string): string {
   if (indicators.length === 0) return ''
   const sorted = [...indicators].sort((a, b) => b.above75Rate - a.above75Rate)
@@ -59,12 +64,11 @@ function genNarrative11(indicators: AchievementIndicator[], semester: string): s
   const above = indicators.filter(i => i.level === 'excellent' || i.level === 'very_good').length
   const below = indicators.filter(i => i.level === 'acceptable' || i.level === 'weak').length
   const semLabel = semester === 'annual' ? 'الدرجة السنوية' : `الفصل ${semester === '1' ? 'الأول' : semester === '2' ? 'الثاني' : 'الثالث'}`
-
   let text = `بناءً على تحليل بيانات ${semLabel}، بلغت نسبة الطلاب الحاصلين على 75% فأعلى على مستوى المدرسة ${schoolAvg75}%، مما يصنّف المدرسة في مستوى "${schoolLevel}". `
   text += `تصدّرت مادة ${bestLabel} قائمة المواد بنسبة ${best.above75Rate}% من الطلاب فوق 75%، `
   text += `في حين سجّلت مادة ${worstLabel} أدنى نسبة بـ ${worst.above75Rate}%. `
-  if (above > 0) text += `حقّقت ${above} مادة${above === 1 ? '' : ' من المواد'} مستوى "جيد جداً" أو "ممتاز" في المؤشر 1.1. `
-  if (below > 0) text += `تحتاج ${below} مادة${below === 1 ? '' : ' من المواد'} إلى تدخّل تحسيني عاجل لرفع نسبة الإنجاز. `
+  if (above > 0) text += `حقّقت ${above} مادة مستوى "جيد جداً" أو "ممتاز" في المؤشر 1.1. `
+  if (below > 0) text += `تحتاج ${below} مادة إلى تدخّل تحسيني عاجل لرفع نسبة الإنجاز. `
   return text
 }
 
@@ -83,27 +87,48 @@ function genNarrative12(years: string[], subjectAvgs: Record<SubjectCode, number
   let text = `عبر ${years.length} سنوات دراسية (${years[0]} إلى ${years[years.length - 1]}): `
   if (improvements.length > 0) text += `سجّلت المواد التالية تحسّناً ملحوظاً: ${improvements.join('، ')}. `
   if (regressions.length > 0) text += `في المقابل شهدت المواد التالية تراجعاً: ${regressions.join('، ')}. `
-  if (improvements.length === 0 && regressions.length === 0) text += 'استقرّت معظم المواد بشكل نسبي دون تغيّر جوهري في المتوسطات العامة.'
+  if (improvements.length === 0 && regressions.length === 0) text += 'استقرّت معظم المواد بشكل نسبي دون تغيّر جوهري.'
   return text
 }
 
 function genNarrativeSubject(ind: AchievementIndicator, stats: ReturnType<typeof computeSubjectStats>): string {
   const label = SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode
   const pm = getPassMark(ind.cycle)
-  const passRate = round2(stats.passRate)
-  const failRate = round2(stats.failRate)
   return `مادة ${label}: متوسط ${round2(stats.mean)}، الوسيط ${round2(stats.median)}، الانحراف المعياري ${round2(stats.stdDev)}. ` +
-    `نسبة النجاح (≥${pm}%): ${passRate}%، نسبة الرسوب: ${failRate}%، نسبة ≥75%: ${round2(ind.above75Rate)}%. ` +
+    `نسبة النجاح (≥${pm}%): ${round2(stats.passRate)}%، نسبة الرسوب: ${round2(stats.failRate)}%، نسبة ≥75%: ${round2(ind.above75Rate)}%. ` +
     `${getProportionLabel(ind.above75Rate, 'ar')} من الطلاب حققوا إنجازاً عالياً (فوق 75%).`
 }
 
-// ── Section wrapper for print ──────────────────────────────────────────────────
+function ChartTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-center gap-1.5 text-sm font-bold mb-2 pb-1 border-b border-gray-200" style={{ color: '#1D5E3F' }}>
+      <span>📊</span>{children}
+    </p>
+  )
+}
+function TableTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-center gap-1.5 text-sm font-bold mb-2 pb-1 border-b border-gray-200" style={{ color: '#1D5E3F' }}>
+      <span>📋</span>{children}
+    </p>
+  )
+}
+function SubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 mt-5 mb-3">
+      <div className="w-1 h-5 rounded-full shrink-0" style={{ background: '#1D5E3F99' }} />
+      <p className="text-sm font-bold" style={{ color: '#1D5E3F' }}>{children}</p>
+    </div>
+  )
+}
+
+// ── Section wrapper ─────────────────────────────────────────────────────────
 function Section({ title, subtitle, num, children }: {
   title: string; subtitle?: string; num?: number; children: React.ReactNode
 }) {
   return (
     <div className="print-section mb-8">
-      <div className="flex items-center gap-3 mb-5 pb-3 border-b-2 border-primary-200" style={{ borderColor: '#1D5E3F33' }}>
+      <div className="flex items-center gap-3 mb-5 pb-3 border-b-2" style={{ borderColor: '#1D5E3F33' }}>
         {num !== undefined && (
           <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
             style={{ background: C.primary }}>
@@ -120,7 +145,15 @@ function Section({ title, subtitle, num, children }: {
   )
 }
 
-// ── KPI card ──────────────────────────────────────────────────────────────────
+function SubSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-6">
+      <h3 className="text-sm font-bold text-gray-700 border-b border-gray-200 pb-1 mb-3" style={{ color: C.primary + 'cc' }}>{title}</h3>
+      {children}
+    </div>
+  )
+}
+
 function Kpi({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color: string }) {
   return (
     <div className="rounded-xl border-2 p-4 flex flex-col gap-1" style={{ borderColor: color + '44', background: color + '0d' }}>
@@ -131,7 +164,6 @@ function Kpi({ label, value, sub, color }: { label: string; value: string | numb
   )
 }
 
-// ── Mini horizontal bar ───────────────────────────────────────────────────────
 function MiniBar({ pct, color }: { pct: number; color: string }) {
   return (
     <div className="flex items-center gap-2 w-full">
@@ -143,43 +175,121 @@ function MiniBar({ pct, color }: { pct: number; color: string }) {
   )
 }
 
+function GapBar({ value, max = 50 }: { value: number | null; max?: number }) {
+  if (value === null) return <span className="text-gray-400">—</span>
+  const pct = Math.min(Math.abs(value) / max * 100, 100)
+  const neg = value < 0
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${neg ? 'bg-red-400' : 'bg-green-400'}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`text-xs font-semibold w-16 text-end ${neg ? 'text-red-600' : 'text-green-700'}`}>
+        {value >= 0 ? '+' : ''}{value.toFixed(1)}%
+      </span>
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function PrintReport({ lang }: PrintReportProps) {
   const ar = lang === 'ar'
   const years = dataStore.getYears()
   const [yearId, setYearId] = useState(years.slice(-1)[0] || '')
   const [semester, setSemester] = useState<'annual' | '1' | '2' | '3'>('annual')
-  const [schoolName, setSchoolName] = useState(ar ? 'مدرسة خالد بن الوليد' : 'Khalid bin Al-Walid School')
+  const [schoolName, setSchoolName] = useState('مدرسة خالد بن الوليد')
 
   const records = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
   const diagScores = useMemo(() => dataStore.getDiagnosticScores(yearId), [yearId])
   const termScoresT1 = useMemo(() => dataStore.getTermScores(yearId, 1), [yearId])
   const termScoresT2 = useMemo(() => dataStore.getTermScores(yearId, 2), [yearId])
   const termScoresT3 = useMemo(() => dataStore.getTermScores(yearId, 3), [yearId])
+  const formativeScores = useMemo(() => dataStore.getFormativeScores(yearId), [yearId])
+  const examScores = useMemo(() => dataStore.getExamScores(yearId), [yearId])
 
   const semesterVal = semester === 'annual' ? 'annual' : (Number(semester) as 1 | 2 | 3)
 
-  const indicators = useMemo(
-    () => computeAchievementIndicators(records, semesterVal),
-    [records, semesterVal]
-  )
+  // ── Standard 1.1 data ──
+  const indicators = useMemo(() => computeAchievementIndicators(records, semesterVal), [records, semesterVal])
 
   const subjectStats = useMemo(() => {
     const map: Record<string, ReturnType<typeof computeSubjectStats>> = {}
     for (const ind of indicators) {
-      const cycle = ind.cycle
-      const stats = computeSubjectStats(records, ind.subjectCode, semesterVal, cycle)
-      map[ind.subjectCode] = stats
+      map[ind.subjectCode] = computeSubjectStats(records, ind.subjectCode, semesterVal, ind.cycle)
     }
     return map
   }, [records, indicators, semesterVal])
 
-  // Multi-year data
-  const multiYearData = useMemo(() => {
-    if (years.length < 2) return null
-    const allCodes = [...new Set(
-      years.flatMap(y => dataStore.getRecordsByYear(y).flatMap(r => Object.keys(r.grades) as SubjectCode[]))
-    )]
+  const grades = useMemo(() => [...new Set(records.map(r => r.grade))].sort((a, b) => a - b), [records])
+
+  const gradeIndicators = useMemo(() => {
+    return grades.map(grade => {
+      const gradeRecs = records.filter(r => r.grade === grade)
+      const inds = computeAchievementIndicators(gradeRecs, semesterVal)
+      const scores = gradeRecs.map(r => r.annualAvg).filter(v => v !== null) as number[]
+      const mean = scores.length ? round2(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+      const above75 = scores.filter(s => s >= 75).length
+      const above75Rate = scores.length ? round2((above75 / scores.length) * 100) : 0
+      return { grade, inds, mean, above75Rate, count: gradeRecs.length }
+    })
+  }, [grades, records, semesterVal])
+
+  // ── Standard 1.2 data ──
+  const allYearRecords = useMemo(() => years.map(y => ({ yearId: y, records: dataStore.getRecordsByYear(y) })), [years])
+  const latestRecords = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
+
+  const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords), [allYearRecords])
+
+  const withinSchoolData = useMemo(() => {
+    return [1, 2, 3].map(sem => {
+      const avgs: number[] = []
+      for (const r of latestRecords) {
+        const scores: number[] = []
+        for (const subj of ANALYSIS_SUBJECTS) {
+          if (!isSubjectRelevantForGrade(subj, r.grade)) continue
+          const g = r.grades[subj]
+          if (!g) continue
+          const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
+          if (score !== null) scores.push(score)
+        }
+        if (scores.length > 0) avgs.push(scores.reduce((a, b) => a + b, 0) / scores.length)
+      }
+      if (avgs.length === 0) return { sem, mean: null, above75Rate: null, passRate: null, count: 0 }
+      const mean = round2(avgs.reduce((a, b) => a + b, 0) / avgs.length)
+      return {
+        sem,
+        mean,
+        above75Rate: round2((avgs.filter(s => s >= 75).length / avgs.length) * 100),
+        passRate: round2((avgs.filter(s => s >= 50).length / avgs.length) * 100),
+        count: avgs.length,
+      }
+    })
+  }, [latestRecords])
+
+  const withinSubjectData = useMemo(() => {
+    return ANALYSIS_SUBJECTS.map(subj => {
+      const cells = [1, 2, 3].map(sem => {
+        const scores: number[] = []
+        for (const r of latestRecords) {
+          if (!isSubjectRelevantForGrade(subj, r.grade)) continue
+          const g = r.grades[subj]
+          if (!g) continue
+          const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
+          if (score !== null) scores.push(score)
+        }
+        if (scores.length === 0) return null
+        return { mean: round2(scores.reduce((a, b) => a + b, 0) / scores.length), above75Rate: round2((scores.filter(s => s >= 75).length / scores.length) * 100) }
+      })
+      return { subj, cells }
+    })
+  }, [latestRecords])
+
+  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(latestRecords, sem as 1 | 2 | 3) })), [latestRecords])
+
+  const progressRates = useMemo(() => computeProgressRates(allYearRecords), [allYearRecords])
+
+  const multiYearSubjectAvgs = useMemo(() => {
+    const allCodes = [...new Set(years.flatMap(y => dataStore.getRecordsByYear(y).flatMap(r => Object.keys(r.grades) as SubjectCode[])))]
     const subjectAvgs: Record<string, number[]> = {}
     const chartRows = years.map(y => {
       const recs = dataStore.getRecordsByYear(y)
@@ -196,7 +306,29 @@ export default function PrintReport({ lang }: PrintReportProps) {
     return { chartRows, allCodes, subjectAvgs }
   }, [years])
 
-  // Term progress
+  // ── Standard 1.3 data ──
+  const allFormativeGapsS1 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 1, undefined, records), [formativeScores, examScores, records])
+  const allFormativeGapsS3 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 3, undefined, records), [formativeScores, examScores, records])
+
+  const gradeFormativeGapsS1 = useMemo(() => grades.map(grade => ({ grade, gaps: computeFormativeExamGaps(formativeScores, examScores, 1, grade, records) })), [formativeScores, examScores, grades, records])
+  const gradeFormativeGapsS3 = useMemo(() => grades.map(grade => ({ grade, gaps: computeFormativeExamGaps(formativeScores, examScores, 3, grade, records) })), [formativeScores, examScores, grades, records])
+
+  const semGaps = useMemo(() => computeSemesterGaps(records), [records])
+
+  const schoolSemSummary = useMemo(() => {
+    const valid = semGaps.filter(g => g.gapS1S3 !== null)
+    if (valid.length === 0) return null
+    const avgS1 = valid.reduce((a, b) => a + (b.avgS1 ?? 0), 0) / valid.length
+    const avgS2 = valid.reduce((a, b) => a + (b.avgS2 ?? 0), 0) / valid.length
+    const avgS3 = valid.reduce((a, b) => a + (b.avgS3 ?? 0), 0) / valid.length
+    const avgAnnual = valid.filter(g => g.avgAnnual !== null).reduce((a, b) => a + (b.avgAnnual ?? 0), 0) / valid.length
+    const gapS1S2 = avgAnnual !== 0 ? round2((avgS2 - avgS1) / avgAnnual * 100) : 0
+    const gapS2S3 = avgAnnual !== 0 ? round2((avgS3 - avgS2) / avgAnnual * 100) : 0
+    const gapS1S3 = avgAnnual !== 0 ? round2((avgS3 - avgS1) / avgAnnual * 100) : 0
+    return { avgS1, avgS2, avgS3, gapS1S2, gapS2S3, gapS1S3 }
+  }, [semGaps])
+
+  // ── Term progress data ──
   const termRows = useMemo(() => {
     const allCodes = [...new Set([
       ...diagScores.map(s => s.subjectCode),
@@ -222,8 +354,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
     })).filter(r => r.diagnostic !== null || r.t1 !== null)
   }, [diagScores, termScoresT1, termScoresT2, termScoresT3])
 
-
-  // Overview stats
+  // ── Overview stats ──
   const totals = useMemo(() => {
     const n = records.length
     const passCount = records.filter(r => r.status === 'pass').length
@@ -240,17 +371,18 @@ export default function PrintReport({ lang }: PrintReportProps) {
       schoolLevel: (() => {
         const r75 = scores.length ? (above75 / scores.length) * 100 : 0
         const pr = n ? (passCount / n) * 100 : 0
-        if (pr < 75) return { ar: 'ضعيف', en: 'Weak', level: 'weak' }
-        if (r75 >= 70) return { ar: 'ممتاز', en: 'Excellent', level: 'excellent' }
-        if (r75 >= 60) return { ar: 'جيد جداً', en: 'Very Good', level: 'very_good' }
-        if (r75 >= 50) return { ar: 'جيد', en: 'Good', level: 'good' }
-        return { ar: 'مقبول', en: 'Acceptable', level: 'acceptable' }
+        if (pr < 75) return { ar: 'ضعيف', level: 'weak' }
+        if (r75 >= 70) return { ar: 'ممتاز', level: 'excellent' }
+        if (r75 >= 60) return { ar: 'جيد جداً', level: 'very_good' }
+        if (r75 >= 50) return { ar: 'جيد', level: 'good' }
+        return { ar: 'مقبول', level: 'acceptable' }
       })(),
     }
   }, [records])
 
   const today = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
   const semLabel = semester === 'annual' ? 'السنوي' : `الفصل ${semester === '1' ? 'الأول' : semester === '2' ? 'الثاني' : 'الثالث'}`
+  const semLabelEn = semester === 'annual' ? 'Annual' : `Term ${semester}`
 
   if (years.length === 0) {
     return (
@@ -260,9 +392,12 @@ export default function PrintReport({ lang }: PrintReportProps) {
     )
   }
 
+  const subjectName = (code: SubjectCode) => ar ? SUBJECT_LABELS[code]?.ar ?? code : SUBJECT_LABELS[code]?.en ?? code
+  const semLbl = (s: number) => ar ? `ف${s}` : `S${s}`
+
   return (
     <div>
-      {/* ── Controls bar (no-print) ── */}
+      {/* ── Controls (no-print) ── */}
       <div className="no-print mb-6 flex flex-wrap gap-3 items-end">
         <div>
           <label className="label">{ar ? 'العام الدراسي' : 'Year'}</label>
@@ -283,10 +418,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
           <label className="label">{ar ? 'اسم المدرسة' : 'School Name'}</label>
           <input className="input w-56" value={schoolName} onChange={e => setSchoolName(e.target.value)} />
         </div>
-        <button
-          className="btn-primary flex items-center gap-2 self-end"
-          onClick={() => window.print()}
-        >
+        <button className="btn-primary flex items-center gap-2 self-end" onClick={() => window.print()}>
           <Printer size={15} />
           {ar ? 'طباعة التقرير' : 'Print Report'}
         </button>
@@ -295,92 +427,72 @@ export default function PrintReport({ lang }: PrintReportProps) {
       {/* ════════════════════════════════════════════════════════════
           PRINTABLE CONTENT
       ════════════════════════════════════════════════════════════ */}
-      <div id="print-root" className="bg-white print:p-0 rounded-xl shadow-sm border p-6 space-y-0">
+      <div id="print-root" className="bg-white print:p-0 rounded-xl shadow-sm border p-6 space-y-0" dir="rtl">
 
         {/* ── COVER PAGE ─────────────────────────────────────────── */}
         <div className="print-page-cover min-h-[90vh] flex flex-col">
-          {/* Decorative header bar */}
           <div className="h-3 rounded-t-xl mb-8" style={{ background: `linear-gradient(90deg, ${C.primary}, #2563eb, #7c3aed)` }} />
-
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-6">
-            {/* Logo circle */}
             <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-lg mb-2"
               style={{ background: `linear-gradient(135deg, ${C.primary}, #2563eb)` }}>
               <span className="text-white text-4xl font-black">ت</span>
             </div>
-
             <div>
-              <p className="text-gray-400 text-sm tracking-widest mb-1">{ar ? 'إمارة أبوظبي — وزارة التعليم' : 'Abu Dhabi — Ministry of Education'}</p>
+              <p className="text-gray-400 text-sm tracking-widest mb-1">إمارة أبوظبي — وزارة التعليم</p>
               <h1 className="text-3xl font-extrabold mb-1" style={{ color: C.primary }}>{schoolName}</h1>
-              <p className="text-gray-500 text-sm">{ar ? 'فريق ضمان جودة إنجازات الطلبة' : 'Student Achievement Quality Team'}</p>
+              <p className="text-gray-500 text-sm">فريق ضمان جودة إنجازات الطلبة</p>
             </div>
-
             <div className="my-4 w-48 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
-
             <div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                {ar ? 'تقرير تحليل الإنجاز الدراسي' : 'Academic Achievement Analysis Report'}
-              </h2>
-              <p className="text-gray-500 text-base">
-                {ar ? `العام الدراسي: ${yearId} — ${semLabel}` : `Academic Year: ${yearId} — ${semLabel}`}
-              </p>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">تقرير تحليل الإنجاز الدراسي الشامل</h2>
+              <p className="text-gray-500 text-base">العام الدراسي: {yearId} — {semLabel}</p>
+              <p className="text-gray-400 text-sm mt-1">المعيار 1.1 | المعيار 1.2 | المعيار 1.3</p>
             </div>
-
             <div className="mt-6 grid grid-cols-3 gap-6 text-center">
               <div>
                 <p className="text-3xl font-black" style={{ color: C.primary }}>{totals.total}</p>
-                <p className="text-xs text-gray-400">{ar ? 'إجمالي الطلاب' : 'Total Students'}</p>
+                <p className="text-xs text-gray-400">إجمالي الطلاب</p>
               </div>
               <div>
-                <p className="text-3xl font-black" style={{ color: levelColor(totals.schoolLevel.level) }}>
-                  {totals.schoolLevel.ar}
-                </p>
-                <p className="text-xs text-gray-400">{ar ? 'مستوى المدرسة' : 'School Level'}</p>
+                <p className="text-3xl font-black" style={{ color: levelColor(totals.schoolLevel.level) }}>{totals.schoolLevel.ar}</p>
+                <p className="text-xs text-gray-400">مستوى المدرسة</p>
               </div>
               <div>
                 <p className="text-3xl font-black" style={{ color: C.excellent }}>{totals.above75Rate}%</p>
-                <p className="text-xs text-gray-400">{ar ? 'فوق 75%' : 'Above 75%'}</p>
+                <p className="text-xs text-gray-400">فوق 75%</p>
               </div>
             </div>
           </div>
-
           <div className="mt-auto pt-6 flex justify-between items-end text-xs text-gray-400 border-t">
-            <span>{ar ? `تاريخ الإصدار: ${today}` : `Issued: ${today}`}</span>
-            <span>{ar ? 'سري — للاستخدام الداخلي' : 'Confidential — Internal Use'}</span>
+            <span>تاريخ الإصدار: {today}</span>
+            <span>سري — للاستخدام الداخلي</span>
           </div>
         </div>
 
-        {/* ── PAGE BREAK ─────────────────────────────────────────── */}
         <div className="print-break" />
 
-        {/* ── SECTION 1: EXECUTIVE SUMMARY ──────────────────────── */}
-        <Section num={1} title={ar ? 'الملخص التنفيذي' : 'Executive Summary'}
-          subtitle={ar ? 'نظرة عامة على أداء المدرسة' : 'School performance overview'}>
-
-          {/* KPIs */}
+        {/* ═══════════════════════════════════════════════════
+            SECTION 1 — EXECUTIVE SUMMARY
+        ═══════════════════════════════════════════════════ */}
+        <Section num={1} title="الملخص التنفيذي" subtitle="نظرة عامة على أداء المدرسة">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <Kpi label={ar ? 'إجمالي الطلاب' : 'Total Students'} value={totals.total} color={C.primary} />
-            <Kpi label={ar ? 'المتوسط العام' : 'Overall Average'} value={`${totals.avg}%`} color={C.very_good} />
-            <Kpi label={ar ? 'نسبة النجاح' : 'Pass Rate'} value={`${totals.passRate}%`}
-              sub={ar ? `${Math.round(totals.total * totals.passRate / 100)} طالب` : `${Math.round(totals.total * totals.passRate / 100)} students`}
-              color={C.excellent} />
-            <Kpi label={ar ? 'نسبة الطلاب فوق 75%' : 'Students ≥75%'} value={`${totals.above75Rate}%`}
-              sub={ar ? 'معيار الإنجاز 1.1' : 'Indicator 1.1 criterion'} color={levelColor(totals.schoolLevel.level)} />
+            <Kpi label="إجمالي الطلاب" value={totals.total} color={C.primary} />
+            <Kpi label="المتوسط العام" value={`${totals.avg}%`} color={C.very_good} />
+            <Kpi label="نسبة النجاح" value={`${totals.passRate}%`}
+              sub={`${Math.round(totals.total * totals.passRate / 100)} طالب`} color={C.excellent} />
+            <Kpi label="الطلاب ≥75%" value={`${totals.above75Rate}%`}
+              sub="معيار الإنجاز 1.1" color={levelColor(totals.schoolLevel.level)} />
           </div>
-
-          {/* School level badge */}
           <div className={clsx('inline-flex items-center gap-3 px-5 py-3 rounded-xl border-2 mb-6', levelBg(totals.schoolLevel.level))}>
             <span className="text-2xl font-black">{totals.schoolLevel.ar}</span>
             <div className="text-sm">
-              <p className="font-semibold">{ar ? 'تصنيف المدرسة — المؤشر 1.1' : 'School Level — Indicator 1.1'}</p>
-              <p className="opacity-70">{ar ? `بناءً على ${totals.above75Rate}% من الطلاب فوق 75%` : `Based on ${totals.above75Rate}% of students above 75%`}</p>
+              <p className="font-semibold">تصنيف المدرسة — المؤشر 1.1</p>
+              <p className="opacity-70">بناءً على {totals.above75Rate}% من الطلاب فوق 75%</p>
             </div>
           </div>
-
-          {/* Achievement summary chart */}
           <div className="grid grid-cols-2 gap-6">
             <div>
-              <p className="text-xs font-semibold text-gray-500 mb-3">{ar ? 'توزيع الإنجاز حسب المادة' : 'Achievement by Subject'}</p>
+              <ChartTitle>توزيع الإنجاز حسب المادة — نسبة الطلاب ≥75%</ChartTitle>
               <div className="space-y-2">
                 {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(ind => (
                   <div key={ind.subjectCode}>
@@ -394,7 +506,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
               </div>
             </div>
             <div>
-              <p className="text-xs font-semibold text-gray-500 mb-3">{ar ? 'مقارنة النجاح / الإخفاق / فوق 75%' : 'Pass / Fail / Above-75 Comparison'}</p>
+              <ChartTitle>مقارنة النجاح / الرسوب / فوق 75% — حسب المادة</ChartTitle>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(i => ({
                   name: (SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode).slice(0, 8),
@@ -406,229 +518,857 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={56} />
                   <Tooltip formatter={(v: number) => `${v}%`} />
-                  <Bar dataKey="فوق 75%" stackId="a" fill={C.excellent} radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="فوق 75%" stackId="a" fill={C.excellent} />
                   <Bar dataKey="نجاح" stackId="a" fill={C.good} />
                   <Bar dataKey="رسوب" stackId="a" fill={C.below} radius={[0, 3, 3, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* Narrative */}
           <div className="mt-5 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#f0fdf4', borderRight: `4px solid ${C.primary}` }}>
-            <p className="font-semibold text-xs text-gray-500 mb-1">{ar ? '📝 التحليل الوصفي' : '📝 Descriptive Analysis'}</p>
+            <p className="font-semibold text-xs text-gray-500 mb-1">📝 التحليل الوصفي</p>
             <p>{genNarrative11(indicators, semester)}</p>
           </div>
         </Section>
 
         <div className="print-break" />
 
-        {/* ── SECTION 2: INDICATOR 1.1 DETAIL ──────────────────── */}
-        <Section num={2} title={ar ? 'المؤشر 1.1 — التحصيل الدراسي التفصيلي' : 'Indicator 1.1 — Achievement Detail'}
-          subtitle={ar ? 'توزيع الطلاب حسب شرائح الإنجاز لكل مادة' : 'Student distribution across achievement bands per subject'}>
+        {/* ═══════════════════════════════════════════════════
+            SECTION 2 — STANDARD 1.1 DETAIL
+        ═══════════════════════════════════════════════════ */}
+        <Section num={2} title="المعيار 1.1 — التحصيل الدراسي التفصيلي" subtitle="توزيع الطلاب حسب شرائح الإنجاز لكل مادة">
 
-          {/* Radar chart */}
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 mb-3">{ar ? 'مخطط الشبكة — نسبة فوق 75% لكل مادة' : 'Radar — Above-75% per Subject'}</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <RadarChart data={indicators.map(i => ({
-                  subject: SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode,
-                  value: i.above75Rate,
-                }))} outerRadius={80}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
-                  <PolarRadiusAxis angle={90} domain={[0, Math.max(20, ...indicators.map(i => i.above75Rate))]} tick={{ fontSize: 8 }} />
-                  <Radar dataKey="value" stroke={C.primary} fill={C.primary} fillOpacity={0.4} />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold text-gray-500 mb-3">{ar ? 'توزيع شرائح الإنجاز' : 'Achievement Band Distribution'}</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={indicators.map(i => ({
-                  name: (SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode).slice(0, 8),
-                  'دون الحد': round2(100 - i.passRate),
-                  'حد — 70': round2(i.above50Rate - i.above70Rate),
-                  '70 — 80': round2(subjectStats[i.subjectCode]?.band_mid ?? 0),
-                  '80 — 90': round2(subjectStats[i.subjectCode]?.band_high ?? 0),
-                  '90+': round2(subjectStats[i.subjectCode]?.band_top ?? 0),
-                }))} margin={{ right: 10, left: 0, bottom: 40 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 9 }} interval={0} />
-                  <YAxis tick={{ fontSize: 9 }} domain={[0, 100]} />
-                  <Tooltip formatter={(v: number) => `${v}%`} />
-                  <Bar dataKey="دون الحد" stackId="a" fill={C.band[0]} />
-                  <Bar dataKey="حد — 70" stackId="a" fill={C.band[2]} />
-                  <Bar dataKey="70 — 80" stackId="a" fill={C.band[3]} />
-                  <Bar dataKey="80 — 90" stackId="a" fill={C.band[4]} />
-                  <Bar dataKey="90+" stackId="a" fill="#064e3b" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Stats table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr style={{ background: C.primary + '15' }}>
-                  <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>{ar ? 'المادة' : 'Subject'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'الطلاب' : 'Students'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'المتوسط' : 'Mean'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'الوسيط' : 'Median'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'الانحراف' : 'SD'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'الأدنى' : 'Min'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'الأعلى' : 'Max'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'نجاح%' : 'Pass%'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'رسوب%' : 'Fail%'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? '≥75%' : '≥75%'}</th>
-                  <th className="border px-2 py-2 text-center">{ar ? 'المستوى' : 'Level'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map((ind, i) => {
-                  const st = subjectStats[ind.subjectCode]
-                  return (
-                    <tr key={ind.subjectCode} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
-                      <td className="border px-3 py-2 font-semibold text-gray-800">
-                        {SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode}
-                      </td>
-                      <td className="border px-2 py-2 text-center">{ind.totalStudents}</td>
-                      <td className="border px-2 py-2 text-center font-semibold">{round2(st?.mean ?? 0)}</td>
-                      <td className="border px-2 py-2 text-center">{round2(st?.median ?? 0)}</td>
-                      <td className="border px-2 py-2 text-center">{round2(st?.stdDev ?? 0)}</td>
-                      <td className="border px-2 py-2 text-center">{round2(st?.min ?? 0)}</td>
-                      <td className="border px-2 py-2 text-center">{round2(st?.max ?? 0)}</td>
-                      <td className="border px-2 py-2 text-center font-semibold" style={{ color: C.excellent }}>{round2(ind.passRate)}%</td>
-                      <td className="border px-2 py-2 text-center font-semibold" style={{ color: C.below }}>{round2(100 - ind.passRate)}%</td>
-                      <td className="border px-2 py-2 text-center font-bold" style={{ color: levelColor(ind.level) }}>{ind.above75Rate}%</td>
-                      <td className="border px-2 py-2 text-center">
-                        <span className={clsx('px-2 py-0.5 rounded text-xs border font-semibold', levelBg(ind.level))}>
-                          {ind.levelAr}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Per-subject narratives */}
-          <div className="mt-5 space-y-2">
-            <p className="text-xs font-semibold text-gray-500">{ar ? '📊 التحليل الرقمي والوصفي لكل مادة' : '📊 Numerical & Descriptive Analysis per Subject'}</p>
-            {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(ind => (
-              <div key={ind.subjectCode} className="p-3 rounded-lg text-xs text-gray-700 leading-6"
-                style={{ background: levelColor(ind.level) + '0d', borderRight: `3px solid ${levelColor(ind.level)}` }}>
-                <span className={clsx('inline-block px-2 py-0.5 rounded border text-xs font-bold me-2', levelBg(ind.level))}>
-                  {SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode}
-                </span>
-                {genNarrativeSubject(ind, subjectStats[ind.subjectCode])}
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* ── SECTION 3: MULTI-YEAR TRENDS (if data) ───────────── */}
-        {multiYearData && years.length >= 2 && (
-          <>
-            <div className="print-break" />
-            <Section num={3} title={ar ? 'المؤشر 1.2 — الاتجاهات عبر السنوات' : 'Indicator 1.2 — Multi-Year Trends'}
-              subtitle={ar ? 'تطور متوسطات المواد عبر السنوات الدراسية' : 'Subject average progression over academic years'}>
-
-              {/* School-wide average trend */}
-              <div className="mb-6">
-                <p className="text-xs font-semibold text-gray-600 mb-2">{ar ? '📊 المؤشر الكلي للمدرسة — متوسط جميع المواد' : '📊 Overall School Indicator — All Subjects Average'}</p>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart
-                    data={multiYearData.chartRows.map(row => ({
-                      year: row.year,
-                      avg: round2(
-                        multiYearData.allCodes
-                          .map(c => row[c] as number)
-                          .filter(v => !isNaN(v) && v > 0)
-                          .reduce((a, b, _, arr) => a + b / arr.length, 0)
-                      ),
-                    }))}
-                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="year" tick={{ fontSize: 11 }} />
-                    <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v: number) => `${v}%`} />
-                    <ReferenceLine y={75} stroke={C.below} strokeDasharray="4 2" label={{ value: '75%', position: 'right', fontSize: 10 }} />
-                    <Line type="monotone" dataKey="avg" name={ar ? 'متوسط المدرسة' : 'School Avg'} stroke={C.primary} strokeWidth={3} dot={{ r: 5 }} connectNulls />
-                  </LineChart>
+          {/* School level — stats table */}
+          <SubSection title="أ) مستوى المدرسة — الإحصاءات التفصيلية">
+            <div className="grid grid-cols-2 gap-6 mb-4">
+              <div>
+                <ChartTitle>مخطط الشبكة — نسبة الطلاب ≥75% لكل مادة</ChartTitle>
+                <ResponsiveContainer width="100%" height={200}>
+                  <RadarChart data={indicators.map(i => ({ subject: SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode, value: i.above75Rate }))} outerRadius={75}>
+                    <PolarGrid />
+                    <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
+                    <PolarRadiusAxis angle={90} domain={[0, Math.max(20, ...indicators.map(i => i.above75Rate))]} tick={{ fontSize: 8 }} />
+                    <Radar dataKey="value" stroke={C.primary} fill={C.primary} fillOpacity={0.4} />
+                  </RadarChart>
                 </ResponsiveContainer>
               </div>
+              <div>
+                <ChartTitle>توزيع شرائح الإنجاز حسب المادة (شرائح الدرجات)</ChartTitle>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={indicators.map(i => ({
+                    name: (SUBJECT_LABELS[i.subjectCode]?.ar ?? i.subjectCode).slice(0, 8),
+                    'دون الحد': round2(100 - i.passRate),
+                    'حد — 70': round2(i.above50Rate - i.above70Rate),
+                    '70 — 80': round2(subjectStats[i.subjectCode]?.band_mid ?? 0),
+                    '80 — 90': round2(subjectStats[i.subjectCode]?.band_high ?? 0),
+                    '90+': round2(subjectStats[i.subjectCode]?.band_top ?? 0),
+                  }))} margin={{ right: 10, left: 0, bottom: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 9 }} interval={0} />
+                    <YAxis tick={{ fontSize: 9 }} domain={[0, 100]} />
+                    <Tooltip formatter={(v: number) => `${v}%`} />
+                    <Bar dataKey="دون الحد" stackId="a" fill={C.band[0]} />
+                    <Bar dataKey="حد — 70" stackId="a" fill={C.band[2]} />
+                    <Bar dataKey="70 — 80" stackId="a" fill={C.band[3]} />
+                    <Bar dataKey="80 — 90" stackId="a" fill={C.band[4]} />
+                    <Bar dataKey="90+" stackId="a" fill="#064e3b" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <TableTitle>جدول الإحصاءات التفصيلية — مستوى المدرسة (المعيار 1.1)</TableTitle>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr style={{ background: C.primary + '15' }}>
+                    <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                    <th className="border px-2 py-2 text-center">الطلاب</th>
+                    <th className="border px-2 py-2 text-center">المتوسط</th>
+                    <th className="border px-2 py-2 text-center">الوسيط</th>
+                    <th className="border px-2 py-2 text-center">الانحراف</th>
+                    <th className="border px-2 py-2 text-center">الأدنى</th>
+                    <th className="border px-2 py-2 text-center">الأعلى</th>
+                    <th className="border px-2 py-2 text-center">نجاح%</th>
+                    <th className="border px-2 py-2 text-center">رسوب%</th>
+                    <th className="border px-2 py-2 text-center">≥75%</th>
+                    <th className="border px-2 py-2 text-center">المستوى</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map((ind, i) => {
+                    const st = subjectStats[ind.subjectCode]
+                    return (
+                      <tr key={ind.subjectCode} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                        <td className="border px-3 py-2 font-semibold">{SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode}</td>
+                        <td className="border px-2 py-2 text-center">{ind.totalStudents}</td>
+                        <td className="border px-2 py-2 text-center font-semibold">{round2(st?.mean ?? 0)}</td>
+                        <td className="border px-2 py-2 text-center">{round2(st?.median ?? 0)}</td>
+                        <td className="border px-2 py-2 text-center">{round2(st?.stdDev ?? 0)}</td>
+                        <td className="border px-2 py-2 text-center">{round2(st?.min ?? 0)}</td>
+                        <td className="border px-2 py-2 text-center">{round2(st?.max ?? 0)}</td>
+                        <td className="border px-2 py-2 text-center font-semibold" style={{ color: C.excellent }}>{round2(ind.passRate)}%</td>
+                        <td className="border px-2 py-2 text-center font-semibold" style={{ color: C.below }}>{round2(100 - ind.passRate)}%</td>
+                        <td className="border px-2 py-2 text-center font-bold" style={{ color: levelColor(ind.level) }}>{ind.above75Rate}%</td>
+                        <td className="border px-2 py-2 text-center">
+                          <span className={clsx('px-2 py-0.5 rounded text-xs border font-semibold', levelBg(ind.level))}>{ind.levelAr}</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 space-y-2">
+              <TableTitle>التحليل الرقمي والوصفي لكل مادة</TableTitle>
+              {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(ind => (
+                <div key={ind.subjectCode} className="p-3 rounded-lg text-xs text-gray-700 leading-6"
+                  style={{ background: levelColor(ind.level) + '0d', borderRight: `3px solid ${levelColor(ind.level)}` }}>
+                  <span className={clsx('inline-block px-2 py-0.5 rounded border text-xs font-bold me-2', levelBg(ind.level))}>
+                    {SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode}
+                  </span>
+                  {genNarrativeSubject(ind, subjectStats[ind.subjectCode])}
+                </div>
+              ))}
+            </div>
+          </SubSection>
 
-              {/* Per-subject trend sections — one full-width page per subject */}
-              {multiYearData.allCodes.map((code, idx) => {
-                const avgs = multiYearData.subjectAvgs[code] ?? []
-                const validAvgs = avgs.filter(v => !isNaN(v))
-                const totalDiff = validAvgs.length >= 2 ? round2(validAvgs[validAvgs.length - 1] - validAvgs[0]) : null
-                const subjectRows = multiYearData.chartRows.map(row => ({ year: row.year as string, val: isNaN(row[code] as number) ? null : row[code] as number }))
-                const subjectColor = C.subjects[idx % C.subjects.length]
-                return (
-                  <div key={code}>
-                    <div className="print-break" />
-                    <div className="border rounded-xl p-5 mt-4" style={{ borderColor: subjectColor + '50', background: subjectColor + '06' }}>
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-base font-bold" style={{ color: subjectColor }}>
-                          {ar ? SUBJECT_LABELS[code]?.ar ?? code : SUBJECT_LABELS[code]?.en ?? code}
-                        </h4>
-                        {totalDiff !== null && (
-                          <span className="text-sm font-bold px-3 py-1 rounded-full" style={{
-                            background: totalDiff >= 0 ? '#f0fdf4' : '#fef2f2',
-                            color: totalDiff >= 0 ? C.excellent : C.below,
-                          }}>
-                            {totalDiff > 0 ? `▲ +${totalDiff}%` : `▼ ${totalDiff}%`}
-                          </span>
-                        )}
+          {/* By grade */}
+          <SubSection title="ب) مستوى الصفوف — مقارنة الإنجاز">
+            <TableTitle>جدول مقارنة الإنجاز حسب الصف — مستوى المدرسة</TableTitle>
+            <div className="overflow-x-auto mb-4">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr style={{ background: C.primary + '15' }}>
+                    <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>الصف</th>
+                    <th className="border px-2 py-2 text-center">الطلاب</th>
+                    <th className="border px-2 py-2 text-center">المتوسط</th>
+                    <th className="border px-2 py-2 text-center">فوق 75%</th>
+                    <th className="border px-2 py-2 text-center">المستوى</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gradeIndicators.map((gi, i) => (
+                    <tr key={gi.grade} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                      <td className="border px-3 py-2 font-semibold">الصف {gi.grade}</td>
+                      <td className="border px-2 py-2 text-center">{gi.count}</td>
+                      <td className="border px-2 py-2 text-center font-semibold">{gi.mean}%</td>
+                      <td className="border px-2 py-2 text-center font-bold" style={{ color: gi.above75Rate >= 60 ? C.excellent : gi.above75Rate >= 40 ? C.good : C.below }}>
+                        {gi.above75Rate}%
+                      </td>
+                      <td className="border px-2 py-2 text-center">
+                        {gi.inds.length > 0 && (() => {
+                          const avgR = round2(gi.inds.reduce((s, x) => s + x.above75Rate, 0) / gi.inds.length)
+                          const lvl = avgR >= 70 ? 'excellent' : avgR >= 60 ? 'very_good' : avgR >= 50 ? 'good' : avgR >= 40 ? 'acceptable' : 'weak'
+                          const lbls: Record<string, string> = { excellent: 'ممتاز', very_good: 'جيد جداً', good: 'جيد', acceptable: 'مقبول', weak: 'ضعيف' }
+                          return <span className={clsx('px-2 py-0.5 rounded text-xs border font-semibold', levelBg(lvl))}>{lbls[lvl]}</span>
+                        })()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {gradeIndicators.map(gi => (
+              <div key={gi.grade} className="mb-4">
+                <p className="text-xs font-semibold mb-2" style={{ color: C.primary }}>الصف {gi.grade} — تفاصيل المواد</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr style={{ background: '#f3f4f6' }}>
+                        <th className="border px-2 py-1.5 text-start">المادة</th>
+                        <th className="border px-2 py-1.5 text-center">الطلاب</th>
+                        <th className="border px-2 py-1.5 text-center">المتوسط</th>
+                        <th className="border px-2 py-1.5 text-center">نجاح%</th>
+                        <th className="border px-2 py-1.5 text-center">≥75%</th>
+                        <th className="border px-2 py-1.5 text-center">المستوى</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gi.inds.sort((a, b) => b.above75Rate - a.above75Rate).map((ind, idx) => (
+                        <tr key={ind.subjectCode} style={{ background: idx % 2 === 0 ? 'white' : '#f9fafb' }}>
+                          <td className="border px-2 py-1.5 font-medium">{SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode}</td>
+                          <td className="border px-2 py-1.5 text-center">{ind.totalStudents}</td>
+                          <td className="border px-2 py-1.5 text-center">{round2(subjectStats[ind.subjectCode]?.mean ?? 0)}</td>
+                          <td className="border px-2 py-1.5 text-center" style={{ color: C.excellent }}>{round2(ind.passRate)}%</td>
+                          <td className="border px-2 py-1.5 text-center font-bold" style={{ color: levelColor(ind.level) }}>{ind.above75Rate}%</td>
+                          <td className="border px-2 py-1.5 text-center">
+                            <span className={clsx('px-1.5 py-0.5 rounded text-xs border font-semibold', levelBg(ind.level))}>{ind.levelAr}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </SubSection>
+        </Section>
+
+        <div className="print-break" />
+
+        {/* ═══════════════════════════════════════════════════
+            SECTION 3 — STANDARD 1.2: PROGRESS TRACKING
+        ═══════════════════════════════════════════════════ */}
+        <Section num={3} title="المعيار 1.2 — تتبع التقدم" subtitle="متابعة تقدم الطلاب عبر السنوات والفصول الدراسية">
+
+          {/* Part 1: Multi-year */}
+          <SubSection title="الجزء 1 — المقارنة متعددة السنوات">
+            {years.length >= 2 ? (
+              <>
+                <div className="mb-4">
+                  <ChartTitle>مخطط الاتجاه — متوسط المدرسة عبر السنوات الدراسية</ChartTitle>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={schoolTrend} margin={{ top: 5, right: 20, left: 0, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={-40} textAnchor="end" interval={0} />
+                      <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: number) => v?.toFixed(1)} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <ReferenceLine y={75} stroke="#22c55e" strokeDasharray="4 4" label={{ value: '75', position: 'right', fontSize: 10 }} />
+                      <Line type="monotone" dataKey="mean" name="المتوسط" stroke="#6366f1" strokeWidth={2} dot connectNulls />
+                      <Line type="monotone" dataKey="above75Rate" name="% فوق 75" stroke="#22c55e" strokeWidth={2} dot connectNulls />
+                      <Line type="monotone" dataKey="passRate" name="% نجاح" stroke="#f59e0b" strokeWidth={2} dot connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <TableTitle>جدول الإحصاءات السنوية — مستوى المدرسة (متعدد السنوات)</TableTitle>
+                <div className="overflow-x-auto mb-4">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr style={{ background: C.primary + '15' }}>
+                        <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>الفصل</th>
+                        <th className="border px-2 py-2 text-center">عدد</th>
+                        <th className="border px-2 py-2 text-center">المتوسط</th>
+                        <th className="border px-2 py-2 text-center">الانحراف</th>
+                        <th className="border px-2 py-2 text-center">% 75+</th>
+                        <th className="border px-2 py-2 text-center">% 90+</th>
+                        <th className="border px-2 py-2 text-center">% نجاح</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schoolTrend.map((pt, i) => (
+                        <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                          <td className="border px-3 py-2 font-medium">{pt.label}</td>
+                          <td className="border px-2 py-2 text-center">{pt.count}</td>
+                          <td className="border px-2 py-2 text-center">{pt.mean?.toFixed(1) ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center">{pt.stdDev?.toFixed(1) ?? '—'}</td>
+                          <td className="border px-2 py-2 text-center">{pt.above75Rate?.toFixed(1) ?? '—'}%</td>
+                          <td className="border px-2 py-2 text-center">{pt.above90Rate?.toFixed(1) ?? '—'}%</td>
+                          <td className="border px-2 py-2 text-center">{pt.passRate?.toFixed(1) ?? '—'}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <TableTitle>جدول تطور متوسط كل مادة عبر السنوات الدراسية</TableTitle>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr style={{ background: C.primary + '15' }}>
+                        <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                        {years.map(y => <th key={y} className="border px-2 py-2 text-center">{y.slice(0, 9)}</th>)}
+                        <th className="border px-2 py-2 text-center">التغيير</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {multiYearSubjectAvgs.allCodes.map((code, i) => {
+                        const avgs = multiYearSubjectAvgs.subjectAvgs[code] ?? []
+                        const valid = avgs.filter(v => !isNaN(v))
+                        const diff = valid.length >= 2 ? round2(valid[valid.length - 1] - valid[0]) : null
+                        return (
+                          <tr key={code} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                            <td className="border px-3 py-2 font-medium">{SUBJECT_LABELS[code]?.ar ?? code}</td>
+                            {avgs.map((v, j) => (
+                              <td key={j} className="border px-2 py-2 text-center font-semibold"
+                                style={{ color: isNaN(v) ? '#9ca3af' : v >= 75 ? C.excellent : v >= 50 ? C.good : C.below }}>
+                                {isNaN(v) ? '—' : `${v}%`}
+                              </td>
+                            ))}
+                            <td className="border px-2 py-2 text-center font-bold"
+                              style={{ color: diff === null ? '#9ca3af' : diff >= 0 ? C.excellent : C.below }}>
+                              {diff === null ? '—' : diff >= 0 ? `▲ +${diff}%` : `▼ ${diff}%`}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: `4px solid ${C.very_good}` }}>
+                  <p className="font-semibold text-xs text-gray-500 mb-1">📝 التحليل الوصفي</p>
+                  <p>{genNarrative12(years, multiYearSubjectAvgs.subjectAvgs as Record<SubjectCode, number[]>)}</p>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 p-4 bg-amber-50 rounded-lg">يلزم بيانات سنتين على الأقل لعرض هذا الجزء</p>
+            )}
+          </SubSection>
+
+          <div className="print-break" />
+
+          {/* Part 2: Within-year */}
+          <SubSection title="الجزء 2 — التقدم داخل العام الدراسي (ف1 → ف2 → ف3)">
+            {/* School within-year */}
+            <SubLabel>أ) مستوى المدرسة — التقدم داخل العام (ف1 → ف2 → ف3)</SubLabel>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              {withinSchoolData.map(d => (
+                <div key={d.sem} className="card p-4 text-center border rounded-xl">
+                  <div className="text-sm text-gray-500 mb-1">{semLbl(d.sem)}</div>
+                  <div className="text-3xl font-bold" style={{ color: C.primary }}>{d.mean?.toFixed(1) ?? '—'}</div>
+                  <div className="text-xs text-gray-400 mt-1">{d.count} طالب</div>
+                  <div className="text-xs mt-1 text-green-600">{d.above75Rate?.toFixed(1) ?? '—'}% فوق 75</div>
+                </div>
+              ))}
+            </div>
+            <div className="mb-4">
+              <ChartTitle>مخطط تطور متوسط المدرسة داخل العام (ف1 → ف2 → ف3)</ChartTitle>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={withinSchoolData.map(d => ({ sem: semLbl(d.sem), mean: d.mean, above75Rate: d.above75Rate }))} margin={{ top: 5, right: 20, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="sem" tick={{ fontSize: 12 }} />
+                  <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: number) => v?.toFixed(1)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <ReferenceLine y={75} stroke="#22c55e" strokeDasharray="4 4" />
+                  <Line type="monotone" dataKey="mean" name="المتوسط" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="above75Rate" name="% فوق 75" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Subject within-year */}
+            <SubLabel>ب) مستوى المواد — التقدم داخل العام حسب المادة</SubLabel>
+            <TableTitle>جدول التقدم داخل العام — متوسط ونسبة ≥75% لكل مادة</TableTitle>
+            <div className="overflow-x-auto mb-4">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr style={{ background: C.primary + '15' }}>
+                    <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                    {[1, 2, 3].flatMap(sem => [
+                      <th key={`${sem}-m`} className="border px-2 py-2 text-center" colSpan={2}>{semLbl(sem)}</th>,
+                    ])}
+                  </tr>
+                  <tr style={{ background: '#f3f4f6' }} className="text-gray-500">
+                    <th className="border px-3 py-1"></th>
+                    {[1, 2, 3].flatMap(sem => [
+                      <th key={`${sem}-m`} className="border px-2 py-1 text-center">متوسط</th>,
+                      <th key={`${sem}-p`} className="border px-2 py-1 text-center">%75+</th>,
+                    ])}
+                  </tr>
+                </thead>
+                <tbody>
+                  {withinSubjectData.map(({ subj, cells }, i) => {
+                    const diffs = cells.map((c, idx) => idx === 0 ? null : (c && cells[idx - 1] ? (c.mean - cells[idx - 1]!.mean) : null))
+                    return (
+                      <tr key={subj} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                        <td className="border px-3 py-2 font-medium">{SUBJECT_LABELS[subj as SubjectCode]?.ar}</td>
+                        {cells.flatMap((cell, idx) => [
+                          <td key={`${String(idx)}-m`} className="border px-2 py-2 text-center">
+                            <span>{cell?.mean.toFixed(1) ?? '—'}</span>
+                            {diffs[idx] !== null && (
+                              <span className={`ms-1 text-xs ${(diffs[idx] ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                {(diffs[idx] ?? 0) >= 0 ? '▲' : '▼'}{Math.abs(diffs[idx] ?? 0).toFixed(1)}
+                              </span>
+                            )}
+                          </td>,
+                          <td key={`${String(idx)}-p`} className="border px-2 py-2 text-center text-gray-500">{cell?.above75Rate.toFixed(0) ?? '—'}%</td>,
+                        ])}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Grade within-year */}
+            <SubLabel>ج) مستوى الصفوف — التقدم داخل العام حسب الصف</SubLabel>
+            <TableTitle>جدول التقدم داخل العام — متوسط ونسبة ≥75% لكل صف</TableTitle>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr style={{ background: C.primary + '15' }}>
+                    <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>الصف</th>
+                    {[1, 2, 3].flatMap(sem => [
+                      <th key={`${sem}-h`} className="border px-2 py-2 text-center" colSpan={2}>{semLbl(sem)}</th>,
+                    ])}
+                  </tr>
+                  <tr style={{ background: '#f3f4f6' }} className="text-gray-500">
+                    <th className="border px-3 py-1"></th>
+                    {[1, 2, 3].flatMap(sem => [
+                      <th key={`${sem}-m`} className="border px-2 py-1 text-center">متوسط</th>,
+                      <th key={`${sem}-p`} className="border px-2 py-1 text-center">%75+</th>,
+                    ])}
+                  </tr>
+                </thead>
+                <tbody>
+                  {grades.map((grade, i) => (
+                    <tr key={grade} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                      <td className="border px-3 py-2 font-medium">الصف {grade}</td>
+                      {withinGradeData.flatMap(({ sem, stats }) => {
+                        const gs = stats.find(s => s.grade === grade)
+                        return [
+                          <td key={`${sem}-m`} className="border px-2 py-2 text-center">{gs ? gs.mean.toFixed(1) : '—'}</td>,
+                          <td key={`${sem}-p`} className="border px-2 py-2 text-center text-gray-500">{gs ? `${gs.above75Rate.toFixed(0)}%` : '—'}</td>,
+                        ]
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SubSection>
+
+          <div className="print-break" />
+
+          {/* Part 3: Progress rates */}
+          <SubSection title="الجزء 3 — نسب التقدم والتراجع">
+            {progressRates.length > 0 && progressRates[0].transitions.length > 0 ? (
+              <>
+                <SubLabel>أ) نسب التقدم والتراجع بين السنوات — مستوى المدرسة</SubLabel>
+                {progressRates[0].transitions.map(t => {
+                  let totImp = 0, totReg = 0, totSta = 0
+                  for (const sp of progressRates) {
+                    const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
+                    if (tr) { totImp += tr.improved; totReg += tr.regressed; totSta += tr.stable }
+                  }
+                  const tot = totImp + totReg + totSta
+                  return (
+                    <div key={t.yearFrom} className="mb-4 p-4 border rounded-xl">
+                      <div className="text-sm font-semibold mb-3">{t.yearFrom} → {t.yearTo}</div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-green-50 rounded-lg p-3 text-center">
+                          <div className="text-xs text-gray-500 mb-1">تقدموا</div>
+                          <div className="text-2xl font-bold text-green-600">{tot > 0 ? ((totImp / tot) * 100).toFixed(1) : '0'}%</div>
+                          <div className="text-xs text-gray-400">{totImp} طالب</div>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-3 text-center">
+                          <div className="text-xs text-gray-500 mb-1">مستقرون</div>
+                          <div className="text-2xl font-bold text-gray-500">{tot > 0 ? ((totSta / tot) * 100).toFixed(1) : '0'}%</div>
+                          <div className="text-xs text-gray-400">{totSta} طالب</div>
+                        </div>
+                        <div className="bg-red-50 rounded-lg p-3 text-center">
+                          <div className="text-xs text-gray-500 mb-1">تراجعوا</div>
+                          <div className="text-2xl font-bold text-red-500">{tot > 0 ? ((totReg / tot) * 100).toFixed(1) : '0'}%</div>
+                          <div className="text-xs text-gray-400">{totReg} طالب</div>
+                        </div>
                       </div>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <LineChart data={subjectRows} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="year" tick={{ fontSize: 11 }} />
-                          <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
-                          <Tooltip formatter={(v: number) => `${v}%`} />
-                          <ReferenceLine y={75} stroke={C.below} strokeDasharray="4 2" label={{ value: '75%', position: 'right', fontSize: 10 }} />
-                          <Line type="monotone" dataKey="val" name={ar ? SUBJECT_LABELS[code]?.ar ?? code : SUBJECT_LABELS[code]?.en ?? code} stroke={subjectColor} strokeWidth={3} dot={{ r: 5 }} connectNulls />
-                        </LineChart>
-                      </ResponsiveContainer>
-                      <div className="flex gap-6 mt-3 flex-wrap">
-                        {multiYearData.chartRows.map((row, i) => (
-                          <div key={i} className="text-center">
-                            <div className="text-xs text-gray-500">{row.year as string}</div>
-                            <div className={clsx('text-sm font-bold', isNaN(avgs[i]) ? 'text-gray-300' : avgs[i] >= 75 ? 'text-green-700' : avgs[i] >= 50 ? 'text-amber-700' : 'text-red-700')}>
-                              {isNaN(avgs[i]) ? '—' : `${avgs[i]}%`}
-                            </div>
-                          </div>
-                        ))}
+                    </div>
+                  )
+                })}
+
+                <SubLabel>ب) نسب التقدم والتراجع بين السنوات — حسب المادة</SubLabel>
+                {progressRates[0].transitions.map(t => (
+                  <div key={t.yearFrom} className="mb-4">
+                    <TableTitle>جدول نسب التقدم — {t.yearFrom} إلى {t.yearTo} — حسب المادة</TableTitle>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr style={{ background: '#f3f4f6' }}>
+                            <th className="border px-3 py-2 text-start">المادة</th>
+                            <th className="border px-2 py-2 text-center">المقارَنون</th>
+                            <th className="border px-2 py-2 text-center text-green-600">تقدموا</th>
+                            <th className="border px-2 py-2 text-center text-gray-400">مستقرون</th>
+                            <th className="border px-2 py-2 text-center text-red-500">تراجعوا</th>
+                            <th className="border px-2 py-2 text-center">معدل التغير</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {progressRates.map((sp, i) => {
+                            const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
+                            if (!tr || tr.total === 0) return null
+                            return (
+                              <tr key={sp.subject} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                <td className="border px-3 py-2 font-medium">{sp.subjectNameAr}</td>
+                                <td className="border px-2 py-2 text-center text-gray-500">{tr.total}</td>
+                                <td className="border px-2 py-2 text-center">
+                                  <span className="text-green-600 font-semibold">{tr.improved}</span>
+                                  <span className="text-xs text-gray-400 ms-1">({tr.improvedPct.toFixed(1)}%)</span>
+                                </td>
+                                <td className="border px-2 py-2 text-center text-gray-400">{tr.stable}</td>
+                                <td className="border px-2 py-2 text-center">
+                                  <span className="text-red-500 font-semibold">{tr.regressed}</span>
+                                  <span className="text-xs text-gray-400 ms-1">({tr.regressedPct.toFixed(1)}%)</span>
+                                </td>
+                                <td className={`border px-2 py-2 text-center font-semibold ${(tr.meanDiff ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                  {tr.meanDiff !== null ? `${tr.meanDiff >= 0 ? '+' : ''}${tr.meanDiff.toFixed(2)}` : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 p-4 bg-amber-50 rounded-lg">يلزم بيانات سنتين على الأقل لحساب نسب التقدم</p>
+            )}
+
+            {progressRates[0]?.withinYear && (
+              <>
+                <SubLabel>ج) نسب التقدم داخل العام — حسب المادة (ف1→ف2→ف3)</SubLabel>
+                <TableTitle>جدول التقدم داخل العام حسب المادة (تقدم / ثبات / تراجع)</TableTitle>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr style={{ background: C.primary + '15' }}>
+                        <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                        <th className="border px-2 py-2 text-center" colSpan={2}>ف1 → ف2</th>
+                        <th className="border px-2 py-2 text-center" colSpan={2}>ف2 → ف3</th>
+                        <th className="border px-2 py-2 text-center" colSpan={2}>ف1 → ف3</th>
+                        <th className="border px-2 py-2 text-center">متوسط الفرق</th>
+                      </tr>
+                      <tr style={{ background: '#f3f4f6' }} className="text-gray-500">
+                        <th className="border px-3 py-1"></th>
+                        <th className="border px-2 py-1 text-green-600">تقدم</th>
+                        <th className="border px-2 py-1 text-red-500">تراجع</th>
+                        <th className="border px-2 py-1 text-green-600">تقدم</th>
+                        <th className="border px-2 py-1 text-red-500">تراجع</th>
+                        <th className="border px-2 py-1 text-green-600">تقدم</th>
+                        <th className="border px-2 py-1 text-red-500">تراجع</th>
+                        <th className="border px-2 py-1">(ف1→ف3)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {progressRates.map((sp, i) => {
+                        const wy = sp.withinYear
+                        if (!wy || wy.s1ToS3.total === 0) return null
+                        return (
+                          <tr key={sp.subject} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                            <td className="border px-3 py-2 font-medium">{sp.subjectNameAr}</td>
+                            <td className="border px-2 py-2 text-center text-green-600 font-semibold">
+                              {wy.s1ToS2.improved}{wy.s1ToS2.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS2.improved / wy.s1ToS2.total) * 100).toFixed(0)}%)</span>}
+                            </td>
+                            <td className="border px-2 py-2 text-center text-red-500 font-semibold">
+                              {wy.s1ToS2.regressed}{wy.s1ToS2.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS2.regressed / wy.s1ToS2.total) * 100).toFixed(0)}%)</span>}
+                            </td>
+                            <td className="border px-2 py-2 text-center text-green-600 font-semibold">
+                              {wy.s2ToS3.improved}{wy.s2ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s2ToS3.improved / wy.s2ToS3.total) * 100).toFixed(0)}%)</span>}
+                            </td>
+                            <td className="border px-2 py-2 text-center text-red-500 font-semibold">
+                              {wy.s2ToS3.regressed}{wy.s2ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s2ToS3.regressed / wy.s2ToS3.total) * 100).toFixed(0)}%)</span>}
+                            </td>
+                            <td className="border px-2 py-2 text-center text-green-600 font-semibold">
+                              {wy.s1ToS3.improved}{wy.s1ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS3.improved / wy.s1ToS3.total) * 100).toFixed(0)}%)</span>}
+                            </td>
+                            <td className="border px-2 py-2 text-center text-red-500 font-semibold">
+                              {wy.s1ToS3.regressed}{wy.s1ToS3.total > 0 && <span className="text-xs text-gray-400 ms-1">({((wy.s1ToS3.regressed / wy.s1ToS3.total) * 100).toFixed(0)}%)</span>}
+                            </td>
+                            <td className={`border px-2 py-2 text-center font-semibold ${(wy.meanS1S3Diff ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                              {wy.meanS1S3Diff !== null ? `${wy.meanS1S3Diff >= 0 ? '+' : ''}${wy.meanS1S3Diff.toFixed(2)}` : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </SubSection>
+        </Section>
+
+        <div className="print-break" />
+
+        {/* ═══════════════════════════════════════════════════
+            SECTION 4 — STANDARD 1.3: GAP ANALYSIS
+        ═══════════════════════════════════════════════════ */}
+        <Section num={4} title="المعيار 1.3 — تحليل الفجوات" subtitle={`عام ${yearId} — الفجوة بين التقويم التكويني والاختبار والفجوة بين الفصول`}>
+
+          {/* Part 1: Formative vs Exam — S1 */}
+          <SubSection title="الجزء 1 — التقويم التكويني مقابل الاختبار (الفصل الأول)">
+            {allFormativeGapsS1.length > 0 ? (
+              <>
+                <div className="mb-4">
+                  <ChartTitle>مخطط الفجوة: التكويني مقابل الاختبار — الفصل الأول</ChartTitle>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart
+                      data={allFormativeGapsS1.map(g => ({ name: subjectName(g.subjectCode), gap: g.gap ?? 0 }))}
+                      margin={{ top: 5, right: 20, left: 0, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`} />
+                      <ReferenceLine y={0} stroke="#6b7280" />
+                      <Bar dataKey="gap" name="الفجوة %" radius={[3, 3, 0, 0]}>
+                        {allFormativeGapsS1.map((g, i) => <Cell key={i} fill={(g.gap ?? 0) < 0 ? '#ef4444' : '#22c55e'} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <TableTitle>جدول الفجوة — التكويني مقابل الاختبار — مستوى المادة (الفصل الأول)</TableTitle>
+                <div className="overflow-x-auto mb-4">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr style={{ background: C.primary + '15' }}>
+                        <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                        <th className="border px-3 py-2 text-center">متوسط التكويني /100</th>
+                        <th className="border px-3 py-2 text-center">متوسط الاختبار /100</th>
+                        <th className="border px-3 py-2 text-center">الفجوة %</th>
+                        <th className="border px-3 py-2 text-center">اختبار أعلى</th>
+                        <th className="border px-3 py-2 text-center">اختبار أقل</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allFormativeGapsS1.map((g, i) => (
+                        <tr key={g.subjectCode} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                          <td className="border px-3 py-2 font-medium">{subjectName(g.subjectCode)}</td>
+                          <td className="border px-3 py-2 text-center">{g.avgFormative?.toFixed(1) ?? '—'}</td>
+                          <td className="border px-3 py-2 text-center">{g.avgExam?.toFixed(1) ?? '—'}</td>
+                          <td className="border px-3 py-2"><GapBar value={g.gap} /></td>
+                          <td className="border px-3 py-2 text-center text-green-600 font-semibold">{g.studentsExamHigher}</td>
+                          <td className="border px-3 py-2 text-center text-red-600 font-semibold">{g.studentsExamLower}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <SubLabel>تفاصيل حسب الصف — التكويني مقابل الاختبار (الفصل الأول)</SubLabel>
+                {gradeFormativeGapsS1.map(({ grade, gaps }) => (
+                  gaps.length > 0 && (
+                    <div key={grade} className="mb-3 p-3 border rounded-lg">
+                      <p className="text-xs font-semibold mb-2" style={{ color: C.primary }}>الصف {grade}</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr style={{ background: '#f3f4f6' }}>
+                              <th className="border px-2 py-1.5 text-start">المادة</th>
+                              <th className="border px-2 py-1.5 text-center">تكويني /100</th>
+                              <th className="border px-2 py-1.5 text-center">اختبار /100</th>
+                              <th className="border px-2 py-1.5 text-center">فجوة %</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {gaps.map((g, i) => (
+                              <tr key={g.subjectCode} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                <td className="border px-2 py-1.5">{subjectName(g.subjectCode)}</td>
+                                <td className="border px-2 py-1.5 text-center">{g.avgFormative?.toFixed(1) ?? '—'}</td>
+                                <td className="border px-2 py-1.5 text-center">{g.avgExam?.toFixed(1) ?? '—'}</td>
+                                <td className="border px-2 py-1.5"><GapBar value={g.gap} /></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
+                    </div>
+                  )
+                ))}
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 p-4 bg-amber-50 rounded-lg">لا توجد بيانات تكويني / اختبار لهذا العام</p>
+            )}
+          </SubSection>
+
+          {/* Part 1: Formative vs Exam — S3 */}
+          {allFormativeGapsS3.length > 0 && (
+            <SubSection title="الجزء 1 — التقويم التكويني مقابل الاختبار (الفصل الثالث)">
+              <TableTitle>جدول الفجوة — التكويني مقابل الاختبار — مستوى المادة (الفصل الثالث)</TableTitle>
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr style={{ background: C.primary + '15' }}>
+                      <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                      <th className="border px-3 py-2 text-center">متوسط التكويني /100</th>
+                      <th className="border px-3 py-2 text-center">متوسط الاختبار /100</th>
+                      <th className="border px-3 py-2 text-center">الفجوة %</th>
+                      <th className="border px-3 py-2 text-center">اختبار أعلى</th>
+                      <th className="border px-3 py-2 text-center">اختبار أقل</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allFormativeGapsS3.map((g, i) => (
+                      <tr key={g.subjectCode} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                        <td className="border px-3 py-2 font-medium">{subjectName(g.subjectCode)}</td>
+                        <td className="border px-3 py-2 text-center">{g.avgFormative?.toFixed(1) ?? '—'}</td>
+                        <td className="border px-3 py-2 text-center">{g.avgExam?.toFixed(1) ?? '—'}</td>
+                        <td className="border px-3 py-2"><GapBar value={g.gap} /></td>
+                        <td className="border px-3 py-2 text-center text-green-600 font-semibold">{g.studentsExamHigher}</td>
+                        <td className="border px-3 py-2 text-center text-red-600 font-semibold">{g.studentsExamLower}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <SubLabel>تفاصيل حسب الصف — التكويني مقابل الاختبار (الفصل الثالث)</SubLabel>
+              {gradeFormativeGapsS3.map(({ grade, gaps }) => (
+                gaps.length > 0 && (
+                  <div key={grade} className="mb-3 p-3 border rounded-lg">
+                    <p className="text-xs font-semibold mb-2" style={{ color: C.primary }}>الصف {grade}</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr style={{ background: '#f3f4f6' }}>
+                            <th className="border px-2 py-1.5 text-start">المادة</th>
+                            <th className="border px-2 py-1.5 text-center">تكويني /100</th>
+                            <th className="border px-2 py-1.5 text-center">اختبار /100</th>
+                            <th className="border px-2 py-1.5 text-center">فجوة %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {gaps.map((g, i) => (
+                            <tr key={g.subjectCode} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                              <td className="border px-2 py-1.5">{subjectName(g.subjectCode)}</td>
+                              <td className="border px-2 py-1.5 text-center">{g.avgFormative?.toFixed(1) ?? '—'}</td>
+                              <td className="border px-2 py-1.5 text-center">{g.avgExam?.toFixed(1) ?? '—'}</td>
+                              <td className="border px-2 py-1.5"><GapBar value={g.gap} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )
-              })}
+              ))}
+            </SubSection>
+          )}
 
-              {/* Narrative analysis */}
-              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: `4px solid ${C.very_good}` }}>
-                <p className="font-semibold text-xs text-gray-500 mb-1">{ar ? '📝 التحليل الوصفي' : '📝 Descriptive Analysis'}</p>
-                <p>{genNarrative12(years, multiYearData.subjectAvgs as Record<SubjectCode, number[]>)}</p>
-              </div>
-            </Section>
-          </>
-        )}
+          <div className="print-break" />
 
-        {/* ── SECTION 4: TERM PROGRESS (if data) ────────────────── */}
+          {/* Part 2: Semester gaps */}
+          <SubSection title="الجزء 2 — الفجوة بين الفصول الدراسية">
+            {schoolSemSummary ? (
+              <>
+                <SubLabel>أ) ملخص الفجوة بين الفصول — مستوى المدرسة</SubLabel>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  {[
+                    { label: 'متوسط ف1 /100', value: schoolSemSummary.avgS1, color: 'text-blue-600' },
+                    { label: 'متوسط ف2 /100', value: schoolSemSummary.avgS2, color: 'text-indigo-600' },
+                    { label: 'متوسط ف3 /100', value: schoolSemSummary.avgS3, color: 'text-purple-600' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="card p-4 text-center border rounded-xl">
+                      <div className="text-xs text-gray-500">{label}</div>
+                      <div className={`text-2xl font-bold mt-1 ${color}`}>{value.toFixed(1)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  {[
+                    { label: 'فجوة % ف1→ف2', value: schoolSemSummary.gapS1S2 },
+                    { label: 'فجوة % ف2→ف3', value: schoolSemSummary.gapS2S3 },
+                    { label: 'فجوة % ف1→ف3', value: schoolSemSummary.gapS1S3 },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="card p-4 text-center border rounded-xl">
+                      <div className="text-xs text-gray-500">{label}</div>
+                      <div className={`text-2xl font-bold mt-1 ${value < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {value >= 0 ? '+' : ''}{value.toFixed(1)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {semGaps.length > 0 && (
+                  <div className="mb-4">
+                    <ChartTitle>مخطط متوسطات الفصول الدراسية حسب المادة (ف1 / ف2 / ف3)</ChartTitle>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart
+                        data={semGaps.filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode)).map(g => ({
+                          name: subjectName(g.subjectCode),
+                          s1: g.avgS1 ?? 0, s2: g.avgS2 ?? 0, s3: g.avgS3 ?? 0,
+                        }))}
+                        margin={{ top: 5, right: 20, left: 0, bottom: 40 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
+                        <YAxis domain={[40, 100]} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v: number) => v.toFixed(1)} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="s1" name="ف1" fill="#6366f1" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="s2" name="ف2" fill="#8b5cf6" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="s3" name="ف3" fill="#a855f7" radius={[2, 2, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                <SubLabel>ب) الفجوة بين الفصول — مستوى المادة</SubLabel>
+                <TableTitle>جدول الفجوة بين الفصول — متوسط كل فصل والفجوة والأولوية (مستوى المادة)</TableTitle>
+                <div className="overflow-x-auto mb-4">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr style={{ background: C.primary + '15' }}>
+                        <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                        <th className="border px-3 py-2 text-center">ف1 /100</th>
+                        <th className="border px-3 py-2 text-center">ف2 /100</th>
+                        <th className="border px-3 py-2 text-center">ف3 /100</th>
+                        <th className="border px-3 py-2 text-center">فجوة% ف1→ف2</th>
+                        <th className="border px-3 py-2 text-center">فجوة% ف2→ف3</th>
+                        <th className="border px-3 py-2 text-center">فجوة% ف1→ف3</th>
+                        <th className="border px-3 py-2 text-center">أولوية</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {semGaps.filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode)).map((g, i) => {
+                        const pColors: Record<string, string> = { critical: 'text-red-700 bg-red-100', high: 'text-orange-700 bg-orange-100', medium: 'text-amber-700 bg-amber-100', low: 'text-yellow-700 bg-yellow-100', ok: 'text-green-700 bg-green-100' }
+                        const pLabels: Record<string, string> = { critical: 'حرج', high: 'عالي', medium: 'متوسط', low: 'منخفض', ok: 'جيد' }
+                        return (
+                          <tr key={g.subjectCode} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                            <td className="border px-3 py-2 font-medium">{subjectName(g.subjectCode)}</td>
+                            <td className="border px-3 py-2 text-center">{g.avgS1?.toFixed(1) ?? '—'}</td>
+                            <td className="border px-3 py-2 text-center">{g.avgS2?.toFixed(1) ?? '—'}</td>
+                            <td className="border px-3 py-2 text-center">{g.avgS3?.toFixed(1) ?? '—'}</td>
+                            <td className="border px-3 py-2"><GapBar value={g.gapS1S2} /></td>
+                            <td className="border px-3 py-2"><GapBar value={g.gapS2S3} /></td>
+                            <td className="border px-3 py-2"><GapBar value={g.gapS1S3} /></td>
+                            <td className="border px-3 py-2 text-center">
+                              <span className={`text-xs px-2 py-0.5 rounded font-medium ${pColors[g.priority] ?? ''}`}>{pLabels[g.priority] ?? g.priority}</span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <SubLabel>ج) الفجوة بين الفصول — مستوى الصف</SubLabel>
+                {grades.map(grade => {
+                  const gradeRecs = records.filter(r => r.grade === grade)
+                  const gradeGaps = computeSemesterGaps(gradeRecs).filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode))
+                  if (gradeGaps.length === 0) return null
+                  return (
+                    <div key={grade} className="mb-3 p-3 border rounded-lg">
+                      <p className="text-xs font-semibold mb-2" style={{ color: C.primary }}>الصف {grade}</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr style={{ background: '#f3f4f6' }}>
+                              <th className="border px-2 py-1.5 text-start">المادة</th>
+                              <th className="border px-2 py-1.5 text-center">ف1 /100</th>
+                              <th className="border px-2 py-1.5 text-center">ف2 /100</th>
+                              <th className="border px-2 py-1.5 text-center">ف3 /100</th>
+                              <th className="border px-2 py-1.5 text-center min-w-[120px]">فجوة% ف1→ف3</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {gradeGaps.map((g, idx) => (
+                              <tr key={g.subjectCode} style={{ background: idx % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                <td className="border px-2 py-1.5 font-medium">{subjectName(g.subjectCode)}</td>
+                                <td className="border px-2 py-1.5 text-center">{g.avgS1?.toFixed(1) ?? '—'}</td>
+                                <td className="border px-2 py-1.5 text-center">{g.avgS2?.toFixed(1) ?? '—'}</td>
+                                <td className="border px-2 py-1.5 text-center">{g.avgS3?.toFixed(1) ?? '—'}</td>
+                                <td className="border px-2 py-1.5"><GapBar value={g.gapS1S3} /></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 p-4 bg-amber-50 rounded-lg">لا توجد بيانات فصلية</p>
+            )}
+          </SubSection>
+        </Section>
+
+        {/* ═══════════════════════════════════════════════════
+            SECTION 5 — TERM PROGRESS (if data)
+        ═══════════════════════════════════════════════════ */}
         {termRows.length > 0 && (
           <>
             <div className="print-break" />
-            <Section num={(multiYearData && years.length >= 2 ? 1 : 0) + 3}
-              title={ar ? 'متابعة تطور الأداء الفصلي' : 'Term-by-Term Performance Tracking'}
-              subtitle={ar ? 'مسار الأداء من التشخيصي حتى الفصل الثالث' : 'Performance trajectory from diagnostic to Term 3'}>
-
+            <Section num={5} title="متابعة تطور الأداء الفصلي" subtitle="مسار الأداء من التشخيصي حتى الفصل الثالث">
+              <ChartTitle>مخطط تطور الأداء الفصلي — من التشخيصي حتى الفصل الثالث</ChartTitle>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={termRows} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -637,23 +1377,23 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   <Tooltip />
                   <Legend />
                   <ReferenceLine y={75} stroke={C.below} strokeDasharray="4 2" />
-                  {termRows.some(r => r.diagnostic !== null) && <Bar dataKey="diagnostic" name={ar ? 'التشخيصي' : 'Diagnostic'} fill="#6b7280" radius={[3, 3, 0, 0]} />}
-                  {termRows.some(r => r.t1 !== null) && <Bar dataKey="t1" name={ar ? 'الفصل الأول' : 'Term 1'} fill={C.very_good} radius={[3, 3, 0, 0]} />}
-                  {termRows.some(r => r.t2 !== null) && <Bar dataKey="t2" name={ar ? 'الفصل الثاني' : 'Term 2'} fill={C.good} radius={[3, 3, 0, 0]} />}
-                  {termRows.some(r => r.t3 !== null) && <Bar dataKey="t3" name={ar ? 'الفصل الثالث' : 'Term 3'} fill={C.excellent} radius={[3, 3, 0, 0]} />}
+                  {termRows.some(r => r.diagnostic !== null) && <Bar dataKey="diagnostic" name="التشخيصي" fill="#6b7280" radius={[3, 3, 0, 0]} />}
+                  {termRows.some(r => r.t1 !== null) && <Bar dataKey="t1" name="الفصل الأول" fill={C.very_good} radius={[3, 3, 0, 0]} />}
+                  {termRows.some(r => r.t2 !== null) && <Bar dataKey="t2" name="الفصل الثاني" fill={C.good} radius={[3, 3, 0, 0]} />}
+                  {termRows.some(r => r.t3 !== null) && <Bar dataKey="t3" name="الفصل الثالث" fill={C.excellent} radius={[3, 3, 0, 0]} />}
                 </BarChart>
               </ResponsiveContainer>
-
               <div className="mt-4 overflow-x-auto">
+                <TableTitle>جدول مسار الأداء من التشخيصي حتى الفصل الثالث — حسب المادة</TableTitle>
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr style={{ background: C.primary + '15' }}>
-                      <th className="border px-3 py-2 text-start">{ar ? 'المادة' : 'Subject'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'التشخيصي' : 'Diag.'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'ف1' : 'T1'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'ف2' : 'T2'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'ف3' : 'T3'}</th>
-                      <th className="border px-2 py-2 text-center">{ar ? 'التغيير' : 'Change'}</th>
+                      <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>المادة</th>
+                      <th className="border px-2 py-2 text-center">التشخيصي</th>
+                      <th className="border px-2 py-2 text-center">ف1</th>
+                      <th className="border px-2 py-2 text-center">ف2</th>
+                      <th className="border px-2 py-2 text-center">ف3</th>
+                      <th className="border px-2 py-2 text-center">التغيير</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -665,9 +1405,9 @@ export default function PrintReport({ lang }: PrintReportProps) {
                           <td className="border px-3 py-2 font-semibold">{r.name}</td>
                           {[r.diagnostic, r.t1, r.t2, r.t3].map((v, ci) => (
                             <td key={ci} className="border px-2 py-2 text-center">
-                              {v !== null ? (
-                                <span className={clsx('font-semibold', v >= 75 ? 'text-green-700' : v >= 50 ? 'text-amber-700' : 'text-red-700')}>{v}</span>
-                              ) : <span className="text-gray-300">—</span>}
+                              {v !== null
+                                ? <span className={clsx('font-semibold', v >= 75 ? 'text-green-700' : v >= 50 ? 'text-amber-700' : 'text-red-700')}>{v}</span>
+                                : <span className="text-gray-300">—</span>}
                             </td>
                           ))}
                           <td className="border px-2 py-2 text-center font-bold">
@@ -686,7 +1426,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
         {/* ── FOOTER ─────────────────────────────────────────────── */}
         <div className="mt-8 pt-4 border-t text-xs text-gray-400 flex justify-between">
           <span>{schoolName} — {yearId}</span>
-          <span>{ar ? 'تحليل الإنجاز الدراسي | سري — للاستخدام الداخلي' : 'Achievement Analysis | Confidential — Internal Use'}</span>
+          <span>تحليل الإنجاز الدراسي | سري — للاستخدام الداخلي</span>
           <span>{today}</span>
         </div>
 
