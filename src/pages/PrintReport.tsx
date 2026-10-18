@@ -248,15 +248,17 @@ export default function PrintReport({ lang }: PrintReportProps) {
   }, [grades, records, semesterVal])
 
   // ── Standard 1.2 data ──
-  const allYearRecords = useMemo(() => years.map(y => ({ yearId: y, records: dataStore.getRecordsByYear(y) })), [years])
-  const latestRecords = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
+  const allYearRecords = useMemo(() => years.map(y => {
+    const recs = dataStore.getRecordsByYear(y)
+    return { yearId: y, records: nationality ? filterRecords(recs, { nationality }) : recs }
+  }), [years, nationality])
 
   const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords), [allYearRecords])
 
   const withinSchoolData = useMemo(() => {
     return [1, 2, 3].map(sem => {
       const avgs: number[] = []
-      for (const r of latestRecords) {
+      for (const r of records) {
         const scores: number[] = []
         for (const subj of ANALYSIS_SUBJECTS) {
           if (!isSubjectRelevantForGrade(subj, r.grade)) continue
@@ -277,13 +279,13 @@ export default function PrintReport({ lang }: PrintReportProps) {
         count: avgs.length,
       }
     })
-  }, [latestRecords])
+  }, [records])
 
   const withinSubjectData = useMemo(() => {
     return ANALYSIS_SUBJECTS.map(subj => {
       const cells = [1, 2, 3].map(sem => {
         const scores: number[] = []
-        for (const r of latestRecords) {
+        for (const r of records) {
           if (!isSubjectRelevantForGrade(subj, r.grade)) continue
           const g = r.grades[subj]
           if (!g) continue
@@ -295,9 +297,9 @@ export default function PrintReport({ lang }: PrintReportProps) {
       })
       return { subj, cells }
     })
-  }, [latestRecords])
+  }, [records])
 
-  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(latestRecords, sem as 1 | 2 | 3) })), [latestRecords])
+  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(records, sem as 1 | 2 | 3) })), [records])
 
   const progressRates = useMemo(() => computeProgressRates(allYearRecords), [allYearRecords])
 
@@ -327,10 +329,9 @@ export default function PrintReport({ lang }: PrintReportProps) {
   }, [allYearRecords, years])
 
   const multiYearSubjectAvgs = useMemo(() => {
-    const allCodes = ANALYSIS_SUBJECTS.filter(code => years.some(y => dataStore.getRecordsByYear(y).some(r => r.grades[code])))
+    const allCodes = ANALYSIS_SUBJECTS.filter(code => allYearRecords.some(({ records: recs }) => recs.some(r => r.grades[code])))
     const subjectAvgs: Record<string, number[]> = {}
-    const chartRows = years.map(y => {
-      const recs = dataStore.getRecordsByYear(y)
+    const chartRows = allYearRecords.map(({ yearId: y, records: recs }) => {
       const row: Record<string, number | string> = { year: y }
       for (const code of allCodes) {
         const scores = extractScores(recs, code, 'annual')
@@ -342,7 +343,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       return row
     })
     return { chartRows, allCodes, subjectAvgs }
-  }, [years])
+  }, [allYearRecords])
 
   // ── Standard 1.3 data ──
   const allFormativeGapsS1 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 1, undefined, records), [formativeScores, examScores, records])
