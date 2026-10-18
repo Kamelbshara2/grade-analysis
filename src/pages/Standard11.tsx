@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
 import {
   ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, Cell,
+  Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
 import { dataStore } from '@/store/dataStore'
 import { computeAchievementIndicators, computeGradeStats, round2 } from '@/utils/statistics'
-import { ANALYSIS_SUBJECTS, SUBJECT_LABELS } from '@/utils/subjectMapping'
+import { ANALYSIS_SUBJECTS, CORE_SUBJECTS, SUBJECT_LABELS } from '@/utils/subjectMapping'
 import type { Language, SubjectCode, Cycle, Nationality } from '@/types'
 import { getCycle, getPassMark } from '@/utils/subjectMapping'
 
@@ -258,7 +258,7 @@ export default function Standard11({ lang }: Props) {
         const cycle: Cycle = getCycle(r.grade)
         const passMark = getPassMark(cycle)
         const scores: number[] = []
-        for (const subj of ANALYSIS_SUBJECTS) {
+        for (const subj of CORE_SUBJECTS) {
           const g = r.grades[subj]
           if (!g) continue
           const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
@@ -299,9 +299,9 @@ export default function Standard11({ lang }: Props) {
     return calcStats(schoolAnalysisScores, pm)
   }, [schoolAnalysisScores, records])
 
-  // ── Subject: annual stats (all 9) ─────────────────────────────────────────
+  // ── Subject: annual stats (core subjects) ────────────────────────────────
   const subjectAnnualData = useMemo(() => {
-    return ANALYSIS_SUBJECTS.map(subj => {
+    return CORE_SUBJECTS.map(subj => {
       const relevantRecords = records.filter(r => r.grades[subj] != null)
       if (relevantRecords.length === 0) return { subj, passRate: null, above75Rate: null, level: null, count: 0 }
       const indicators = computeAchievementIndicators(relevantRecords, 'annual')
@@ -378,10 +378,25 @@ export default function Standard11({ lang }: Props) {
 
   const gradeStats = useMemo(() => calcStats(gradeScores, getPassMark(getCycle(activeGrade))), [gradeScores, activeGrade])
 
+  // ── Achievement Indicator 1.1 ─────────────────────────────────────────────
+  const achievementRows = useMemo(() => {
+    const indicators = computeAchievementIndicators(records, 'annual')
+    return indicators.filter(ind => CORE_SUBJECTS.includes(ind.subjectCode))
+  }, [records])
+
+  const schoolAchievement = useMemo(() => {
+    if (achievementRows.length === 0) return null
+    const avg = (arr: number[]) => arr.length ? round2(arr.reduce((a, b) => a + b) / arr.length) : 0
+    const avgPassRate = avg(achievementRows.map(r => r.passRate))
+    const avgAbove75Rate = avg(achievementRows.map(r => r.above75Rate))
+    const level = deriveLevel(avgPassRate, avgAbove75Rate)
+    return { avgPassRate, avgAbove75Rate, level }
+  }, [achievementRows])
+
   // Subject breakdown for selected grade
   const gradeSubjectBreakdown = useMemo(() => {
     const gradeRecs = records.filter(r => r.grade === activeGrade)
-    return ANALYSIS_SUBJECTS.map(subj => {
+    return CORE_SUBJECTS.map(subj => {
       const scores = gradeRecs.map(r => r.grades[subj]?.annual).filter((v): v is number => v !== null && v !== undefined)
       if (scores.length === 0) return null
       const pm = getPassMark(getCycle(activeGrade))
@@ -435,6 +450,117 @@ export default function Standard11({ lang }: Props) {
           </select>
         </div>
       </div>
+
+      {/* ── Achievement Indicator 1.1 ── */}
+      {achievementRows.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="font-semibold text-gray-700 dark:text-gray-300">
+            {ar ? 'المؤشر 1.1 — التحصيل الأكاديمي (المواد الأساسية)' : 'Indicator 1.1 — Academic Achievement (Core Subjects)'}
+          </h2>
+
+          {/* School overall badge */}
+          {schoolAchievement && (
+            <div className="card p-4 flex items-center justify-between flex-wrap gap-3"
+              style={{ borderRight: '4px solid #1D5E3F' }}>
+              <div>
+                <p className="text-sm font-bold text-gray-700 dark:text-gray-200">
+                  {ar ? '🏫 المدرسة ككل — متوسط المواد الأساسية' : '🏫 School Overall — Core Subjects Average'}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {ar
+                    ? `نسبة النجاح: ${schoolAchievement.avgPassRate}% · فوق 75: ${schoolAchievement.avgAbove75Rate}%`
+                    : `Pass rate: ${schoolAchievement.avgPassRate}% · Above 75: ${schoolAchievement.avgAbove75Rate}%`}
+                </p>
+              </div>
+              <LevelBadge level={schoolAchievement.level} lang={lang} />
+            </div>
+          )}
+
+          {/* Per-subject chart */}
+          <div className="card p-4">
+            <p className="text-xs font-semibold text-gray-500 mb-3">
+              {ar ? 'نسبة النجاح ونسبة الطلاب فوق 75 لكل مادة' : 'Pass rate & % above 75 per subject'}
+            </p>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart
+                data={achievementRows.map(r => ({
+                  name: ar ? SUBJECT_LABELS[r.subjectCode]?.ar ?? r.subjectCode : SUBJECT_LABELS[r.subjectCode]?.en ?? r.subjectCode,
+                  [ar ? 'نسبة النجاح' : 'Pass Rate']: r.passRate,
+                  [ar ? 'فوق 75' : 'Above 75']: r.above75Rate,
+                }))}
+                margin={{ top: 5, right: 20, left: 0, bottom: 50 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} interval={0} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} />
+                <Tooltip formatter={(v: number) => `${v}%`} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <ReferenceLine y={75} stroke="#d97706" strokeDasharray="4 4" label={{ value: '75%', position: 'right', fontSize: 9 }} />
+                <Bar dataKey={ar ? 'نسبة النجاح' : 'Pass Rate'} fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                <Bar dataKey={ar ? 'فوق 75' : 'Above 75'} fill="#16a34a" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Per-subject table */}
+          <div className="card overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr style={{ background: '#1D5E3F15' }}>
+                  <th className="border px-3 py-2 text-start font-bold" style={{ color: '#1D5E3F' }}>
+                    {ar ? 'المادة' : 'Subject'}
+                  </th>
+                  <th className="border px-2 py-2 text-center">{ar ? 'عدد الطلاب' : 'Students'}</th>
+                  <th className="border px-2 py-2 text-center">{ar ? 'متوسط' : 'Mean'}</th>
+                  <th className="border px-2 py-2 text-center">{ar ? 'نسبة النجاح' : 'Pass Rate'}</th>
+                  <th className="border px-2 py-2 text-center">{ar ? 'فوق 75' : 'Above 75'}</th>
+                  <th className="border px-2 py-2 text-center font-bold">{ar ? 'التصنيف' : 'Level'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {achievementRows.map((r, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                    <td className="border px-3 py-2 font-semibold text-gray-800 dark:text-gray-100"
+                      style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                      {ar ? SUBJECT_LABELS[r.subjectCode]?.ar ?? r.subjectCode : SUBJECT_LABELS[r.subjectCode]?.en ?? r.subjectCode}
+                    </td>
+                    <td className="border px-2 py-2 text-center">{r.totalStudents}</td>
+                    <td className="border px-2 py-2 text-center">{r.mean}</td>
+                    <td className="border px-2 py-2 text-center">
+                      <span className={r.passRate >= 75 ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                        {r.passRate}%
+                      </span>
+                    </td>
+                    <td className="border px-2 py-2 text-center">
+                      <span className="font-medium">{r.above75Rate}%</span>
+                      <span className="text-gray-400 ml-1">({r.above75Count})</span>
+                    </td>
+                    <td className="border px-2 py-2 text-center">
+                      <LevelBadge level={r.level} lang={lang} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+            {[
+              { label: ar ? 'ممتاز (>70% فوق 75)' : 'Excellent (>70% above 75)', color: '#16a34a' },
+              { label: ar ? 'جيد جداً (>60%)' : 'Very Good (>60%)', color: '#0284c7' },
+              { label: ar ? 'جيد (>50%)' : 'Good (>50%)', color: '#d97706' },
+              { label: ar ? 'مقبول (نجاح ≥75%)' : 'Acceptable (pass ≥75%)', color: '#64748b' },
+              { label: ar ? 'ضعيف (نجاح <75%)' : 'Weak (pass <75%)', color: '#dc2626' },
+            ].map(l => (
+              <div key={l.label} className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-sm" style={{ background: l.color }} />
+                {l.label}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Summary bar chart */}
       <div className="card p-4">

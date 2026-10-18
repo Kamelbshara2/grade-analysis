@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import type { Language, SubjectCode, StudentRecord, Nationality } from '@/types'
 import { dataStore } from '@/store/dataStore'
-import { SUBJECT_LABELS, getPassMark, getCycle } from '@/utils/subjectMapping'
+import { SUBJECT_LABELS, CORE_SUBJECTS, getPassMark, getCycle } from '@/utils/subjectMapping'
 import { round2, filterRecords } from '@/utils/statistics'
 import clsx from 'clsx'
 
@@ -85,7 +85,7 @@ export default function Dashboard({ lang }: DashboardProps) {
     const avgs = yearRecords.map(r => r.annualAvg).filter((v): v is number => v !== null)
     const pass = yearRecords.filter(r => r.annualAvg !== null && r.annualAvg >= getPassMark(getCycle(r.grade))).length
     const total = yearRecords.length
-    const above90 = avgs.filter(v => v >= 90).length
+    const above75 = avgs.filter(v => v >= 75).length
     const mean = avgs.length > 0 ? avgs.reduce((a, b) => a + b, 0) / avgs.length : 0
     return {
       total,
@@ -93,8 +93,8 @@ export default function Dashboard({ lang }: DashboardProps) {
       fail: total - pass,
       passRate: (pass / total) * 100,
       failRate: ((total - pass) / total) * 100,
-      above90,
-      above90Rate: avgs.length > 0 ? (above90 / avgs.length) * 100 : 0,
+      above75,
+      above75Rate: avgs.length > 0 ? (above75 / avgs.length) * 100 : 0,
       mean,
     }
   }, [yearRecords])
@@ -129,7 +129,7 @@ export default function Dashboard({ lang }: DashboardProps) {
           above75Count,
         }
       })
-      .filter(s => s.count >= 3)
+      .filter(s => s.count >= 3 && CORE_SUBJECTS.includes(s.subject as any))
       .sort((a, b) => b.above75Rate - a.above75Rate)
   }, [yearRecords, ar])
 
@@ -145,7 +145,7 @@ export default function Dashboard({ lang }: DashboardProps) {
       .map(([grade, recs]) => {
         const pass = recs.filter(r => r.annualAvg !== null && r.annualAvg >= getPassMark(getCycle(r.grade))).length
         const avgs = recs.map(r => r.annualAvg).filter((v): v is number => v !== null)
-        const above90 = avgs.filter(v => v >= 90).length
+        const above75 = avgs.filter(v => v >= 75).length
         const mean = avgs.length > 0 ? avgs.reduce((a, b) => a + b, 0) / avgs.length : 0
         const sections = new Set(recs.map(r => r.section)).size
         return {
@@ -155,7 +155,7 @@ export default function Dashboard({ lang }: DashboardProps) {
           fail: recs.length - pass,
           passRate: (pass / recs.length) * 100,
           mean,
-          above90Rate: avgs.length > 0 ? (above90 / avgs.length) * 100 : 0,
+          above75Rate: avgs.length > 0 ? (above75 / avgs.length) * 100 : 0,
           sections,
         }
       })
@@ -261,9 +261,9 @@ export default function Dashboard({ lang }: DashboardProps) {
           />
           <KpiCard
             icon={<Award size={18} />}
-            label={ar ? 'نسبة التميز (90+)' : 'Excellence (90+)'}
-            value={`${round2(kpi.above90Rate)}%`}
-            sub={`${kpi.above90} ${ar ? 'طالب' : 'students'}`}
+            label={ar ? 'نسبة التميز (75+)' : 'Excellence (75+)'}
+            value={`${round2(kpi.above75Rate)}%`}
+            sub={`${kpi.above75} ${ar ? 'طالب' : 'students'}`}
             color="yellow"
           />
           <KpiCard
@@ -387,7 +387,7 @@ export default function Dashboard({ lang }: DashboardProps) {
                 <th>{ar ? 'الفصول' : 'Sections'}</th>
                 <th>{ar ? 'نسبة النجاح' : 'Pass Rate'}</th>
                 <th>{ar ? 'المتوسط' : 'Mean'}</th>
-                <th>{ar ? 'التميز 90+' : '90+ Rate'}</th>
+                <th>{ar ? 'التميز 75+' : '75+ Rate'}</th>
                 <th>{ar ? 'راسبون' : 'Failing'}</th>
               </tr>
             </thead>
@@ -410,7 +410,7 @@ export default function Dashboard({ lang }: DashboardProps) {
                     </span>
                   </td>
                   <td className={rateClass(g.mean)}>{round2(g.mean)}</td>
-                  <td className={rateClass(g.above90Rate)}>{round2(g.above90Rate)}%</td>
+                  <td className={rateClass(g.above75Rate)}>{round2(g.above75Rate)}%</td>
                   <td className={g.fail > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}>
                     {g.fail}
                   </td>
