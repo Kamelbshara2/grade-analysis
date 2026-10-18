@@ -1047,15 +1047,16 @@ export function computeFormativeExamGaps(
   const fFiltered = grade !== undefined ? formativeScores.filter(f => f.grade === grade) : formativeScores
   const eFiltered = grade !== undefined ? examScores.filter(e => e.grade === grade) : examScores
 
+  // Formative stored as raw /10, exam as raw /25 — normalize to /100
   const fMap = new Map<string, number>()
   for (const f of fFiltered) {
-    const score = semester === 1 ? f.s1 : f.s3
-    if (score !== null) fMap.set(`${f.studentId}:${f.subjectCode}`, score)
+    const raw = semester === 1 ? f.s1 : f.s3
+    if (raw !== null) fMap.set(`${f.studentId}:${f.subjectCode}`, Math.min(100, raw * 10))
   }
   const eMap = new Map<string, number>()
   for (const e of eFiltered) {
-    const score = semester === 1 ? e.s1 : e.s3
-    if (score !== null) eMap.set(`${e.studentId}:${e.subjectCode}`, score)
+    const raw = semester === 1 ? e.s1 : e.s3
+    if (raw !== null) eMap.set(`${e.studentId}:${e.subjectCode}`, Math.min(100, raw * 4))
   }
 
   const subjectSet = new Set<SubjectCode>()
