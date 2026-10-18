@@ -77,6 +77,11 @@ export const ANALYSIS_SUBJECTS: SubjectCode[] = [
   'science', 'biology', 'chemistry', 'physics',
 ]
 
+// Core subjects mandatory across all grades and tracks
+export const CORE_SUBJECTS: SubjectCode[] = [
+  'arabic', 'english', 'math', 'islamic',
+]
+
 export function getCycleSubjects(cycle: Cycle): SubjectCode[] {
   return cycle === 2 ? CYCLE2_SUBJECTS : CYCLE3_SUBJECTS
 }

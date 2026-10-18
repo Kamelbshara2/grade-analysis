@@ -6,8 +6,8 @@ import {
 } from 'recharts'
 import type { Language, SubjectCode, Semester, Nationality } from '@/types'
 import { dataStore } from '@/store/dataStore'
-import { SUBJECT_LABELS, ANALYSIS_SUBJECTS } from '@/utils/subjectMapping'
-import { round2, computeAchievementIndicators } from '@/utils/statistics'
+import { SUBJECT_LABELS, CORE_SUBJECTS } from '@/utils/subjectMapping'
+import { round2 } from '@/utils/statistics'
 import clsx from 'clsx'
 
 interface GapAnalysisProps { lang: Language }
@@ -66,7 +66,7 @@ function LevelBadge({ level, labelAr, labelEn, ar }: { level: string; labelAr: s
   )
 }
 
-type Tab = 'internal' | 'cross' | 'achievement'
+type Tab = 'internal' | 'cross'
 
 export default function GapAnalysis({ lang }: GapAnalysisProps) {
   const ar = lang === 'ar'
@@ -113,7 +113,7 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
     const codes = [...new Set([
       ...fScores.map(s => s.subjectCode),
       ...eScores.map(s => s.subjectCode),
-    ])].filter(c => ANALYSIS_SUBJECTS.includes(c as SubjectCode)) as SubjectCode[]
+    ])].filter(c => CORE_SUBJECTS.includes(c as SubjectCode)) as SubjectCode[]
 
     const avg = (arr: (number | null)[]) => {
       const v = arr.filter((x): x is number => x !== null)
@@ -188,33 +188,6 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
     return { gapRows: rows, schoolSummary }
   }, [yearId, grade, section, nationality])
 
-  // Achievement indicator (1.1) — from student records
-  const achievementRows = useMemo(() => {
-    const records = dataStore.getRecordsByYear(yearId)
-    let filtered = grade !== undefined
-      ? records.filter(r => r.grade === grade && (!section || r.section === section))
-      : section ? records.filter(r => r.section === section) : records
-    if (nationality) filtered = filtered.filter(r => r.student.nationality === nationality)
-
-    const indicators = computeAchievementIndicators(filtered, 'annual')
-    return indicators.filter(ind => ANALYSIS_SUBJECTS.includes(ind.subjectCode))
-  }, [yearId, grade, section, nationality])
-
-  // School-overall achievement (average of subject pass rates across analysis subjects)
-  const schoolAchievement = useMemo(() => {
-    if (achievementRows.length === 0) return null
-    const avg = (arr: number[]) => arr.length ? round2(arr.reduce((a, b) => a + b) / arr.length) : 0
-    const avgPassRate = avg(achievementRows.map(r => r.passRate))
-    const avgAbove75Rate = avg(achievementRows.map(r => r.above75Rate))
-    let level: string, levelAr: string, levelEn: string
-    if (avgPassRate < 75) { level = 'weak'; levelAr = 'ضعيف'; levelEn = 'Weak' }
-    else if (avgAbove75Rate >= 70) { level = 'excellent'; levelAr = 'ممتاز'; levelEn = 'Excellent' }
-    else if (avgAbove75Rate >= 60) { level = 'very_good'; levelAr = 'جيد جداً'; levelEn = 'Very Good' }
-    else if (avgAbove75Rate >= 50) { level = 'good'; levelAr = 'جيد'; levelEn = 'Good' }
-    else { level = 'acceptable'; levelAr = 'مقبول'; levelEn = 'Acceptable' }
-    return { avgPassRate, avgAbove75Rate, level, levelAr, levelEn }
-  }, [achievementRows])
-
   const hasInternalData = gapRows.some(r => r.internalGap1 !== null || r.internalGap3 !== null)
   const hasCrossData = gapRows.some(r => r.crossGap !== null)
 
@@ -225,7 +198,6 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'internal', label: ar ? 'أ — فجوة التكويني / الاختبار' : 'A — Formative / Exam Gap' },
     { id: 'cross',    label: ar ? 'ب — الفجوة بين الفصول' : 'B — Cross-Semester Gap' },
-    { id: 'achievement', label: ar ? 'ج — المؤشر 1.1 النجاح' : 'C — 1.1 Achievement' },
   ]
 
   return (
@@ -502,128 +474,6 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
         )
       )}
 
-      {/* ── Section C: Achievement Indicator 1.1 ──────────────────── */}
-      {activeTab === 'achievement' && (
-        achievementRows.length === 0 ? (
-          <div className="card text-center py-12 text-gray-400">
-            {ar ? 'لا توجد بيانات درجات سنوية' : 'No annual grade data available'}
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="p-3 rounded-xl text-xs text-gray-600 dark:text-gray-400"
-              style={{ background: '#f0fdf4', borderRight: `4px solid ${C.primary}` }}>
-              {ar
-                ? 'المؤشر 1.1: نسبة النجاح ≥75% من الطلاب = مقبول. ثم: >50% فوق 75 = جيد، >60% = جيد جداً، >70% = ممتاز. أقل من 75% نجاح = ضعيف.'
-                : 'Indicator 1.1: ≥75% pass rate = Acceptable. Then: >50% above 75 = Good, >60% = Very Good, >70% = Excellent. <75% pass = Weak.'}
-            </div>
-
-            {/* School overall */}
-            {schoolAchievement && (
-              <div className="rounded-xl border-2 p-4"
-                style={{ borderColor: LEVEL_COLOR[schoolAchievement.level] + '55', background: LEVEL_BG[schoolAchievement.level] }}>
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-gray-700">
-                      {ar ? '🏫 المدرسة ككل (متوسط المواد المعتمدة)' : '🏫 School Overall (approved subjects average)'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {ar
-                        ? `نسبة النجاح: ${schoolAchievement.avgPassRate}% · فوق 75: ${schoolAchievement.avgAbove75Rate}%`
-                        : `Pass rate: ${schoolAchievement.avgPassRate}% · Above 75: ${schoolAchievement.avgAbove75Rate}%`}
-                    </p>
-                  </div>
-                  <LevelBadge level={schoolAchievement.level} labelAr={schoolAchievement.levelAr} labelEn={schoolAchievement.levelEn} ar={ar} />
-                </div>
-              </div>
-            )}
-
-            {/* Per-subject chart */}
-            <div className="card">
-              <p className="text-xs font-semibold text-gray-500 mb-3">
-                {ar ? 'نسبة الطلاب فوق 75 لكل مادة (%)' : '% Students above 75 per subject'}
-              </p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart
-                  data={achievementRows.map(r => ({
-                    name: ar ? SUBJECT_LABELS[r.subjectCode]?.ar ?? r.subjectCode : SUBJECT_LABELS[r.subjectCode]?.en ?? r.subjectCode,
-                    above75: r.above75Rate,
-                    pass: r.passRate,
-                  }))}
-                  margin={{ top: 5, right: 20, left: 0, bottom: 45 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} interval={0} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v: number) => `${v}%`} />
-                  <Legend />
-                  <ReferenceLine y={75} stroke="#d97706" strokeDasharray="4 4" label={{ value: '75%', position: 'right', fontSize: 9 }} />
-                  <ReferenceLine y={50} stroke="#9ca3af" strokeDasharray="3 3" />
-                  <Bar dataKey="pass" name={ar ? 'نسبة النجاح' : 'Pass rate'} fill={C.s1} radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="above75" name={ar ? 'فوق 75' : 'Above 75'} fill={C.excellent} radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Per-subject table */}
-            <div className="card overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr style={{ background: C.primary + '15' }}>
-                    <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>
-                      {ar ? 'المادة' : 'Subject'}
-                    </th>
-                    <th className="border px-2 py-2 text-center">{ar ? 'عدد الطلاب' : 'Students'}</th>
-                    <th className="border px-2 py-2 text-center">{ar ? 'متوسط' : 'Mean'}</th>
-                    <th className="border px-2 py-2 text-center">{ar ? 'نسبة النجاح' : 'Pass rate'}</th>
-                    <th className="border px-2 py-2 text-center">{ar ? 'فوق 75' : 'Above 75'}</th>
-                    <th className="border px-2 py-2 text-center font-bold">{ar ? 'التصنيف' : 'Level'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {achievementRows.map((r, i) => (
-                    <tr key={i} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
-                      <td className="border px-3 py-2 font-semibold text-gray-800 dark:text-gray-100"
-                        style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
-                        {ar ? SUBJECT_LABELS[r.subjectCode]?.ar ?? r.subjectCode : SUBJECT_LABELS[r.subjectCode]?.en ?? r.subjectCode}
-                      </td>
-                      <td className="border px-2 py-2 text-center">{r.totalStudents}</td>
-                      <td className="border px-2 py-2 text-center">{r.mean}</td>
-                      <td className="border px-2 py-2 text-center">
-                        <span className={clsx('font-medium', r.passRate >= 75 ? 'text-green-600' : 'text-red-500')}>
-                          {r.passRate}%
-                        </span>
-                      </td>
-                      <td className="border px-2 py-2 text-center">
-                        <span className="font-medium">{r.above75Rate}%</span>
-                        <span className="text-gray-400 ml-1">({r.above75Count})</span>
-                      </td>
-                      <td className="border px-2 py-2 text-center">
-                        <LevelBadge level={r.level} labelAr={r.levelAr} labelEn={r.levelEn} ar={ar} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Legend */}
-            <div className="flex flex-wrap gap-4 text-xs text-gray-500">
-              {[
-                { label: ar ? 'ممتاز (>70% فوق 75)' : 'Excellent (>70% above 75)', color: LEVEL_COLOR.excellent },
-                { label: ar ? 'جيد جداً (>60%)' : 'Very Good (>60%)', color: LEVEL_COLOR.very_good },
-                { label: ar ? 'جيد (>50%)' : 'Good (>50%)', color: LEVEL_COLOR.good },
-                { label: ar ? 'مقبول (نجاح ≥75%)' : 'Acceptable (pass ≥75%)', color: LEVEL_COLOR.acceptable },
-                { label: ar ? 'ضعيف (نجاح <75%)' : 'Weak (pass <75%)', color: LEVEL_COLOR.weak },
-              ].map(l => (
-                <div key={l.label} className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-sm" style={{ background: l.color }} />
-                  {l.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      )}
     </div>
   )
 }
