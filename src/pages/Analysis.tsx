@@ -3,7 +3,7 @@ import { t } from '@/i18n/translations'
 import type { Language, AnalysisFilter, SubjectCode, Semester } from '@/types'
 import { dataStore } from '@/store/dataStore'
 import { filterRecords, computeSubjectStats, computeSchoolStats, round2 } from '@/utils/statistics'
-import { getCycle, SUBJECT_LABELS, getCycleSubjects } from '@/utils/subjectMapping'
+import { getCycle, SUBJECT_LABELS, getCycleSubjects, ANALYSIS_SUBJECTS } from '@/utils/subjectMapping'
 import FilterBar from '@/components/ui/FilterBar'
 import StatCard from '@/components/ui/StatCard'
 import BandBarChart from '@/components/charts/BandBarChart'
@@ -35,7 +35,7 @@ export default function Analysis({ lang }: AnalysisProps) {
   const semester = (filter.semester ?? 'annual') as Semester | 'annual'
 
   const subjectStatsList = useMemo(() => {
-    const subjects = getCycleSubjects(cycle)
+    const subjects = ANALYSIS_SUBJECTS
     return subjects
       .map(s => computeSubjectStats(records, s, semester, cycle))
       .filter(s => s.count > 0)
