@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts'
 import { t } from '@/i18n/translations'
-import type { Language, SubjectCode } from '@/types'
+import type { Language, SubjectCode, Nationality } from '@/types'
 import { dataStore } from '@/store/dataStore'
 import { filterRecords, computeSubjectStats, computeSchoolStats, round2 } from '@/utils/statistics'
 import { getCycle, SUBJECT_LABELS } from '@/utils/subjectMapping'
@@ -30,6 +30,7 @@ export default function Comparison({ lang }: ComparisonProps) {
   const [subject, setSubject] = useState<SubjectCode>('arabic')
   const [metric, setMetric] = useState<string>('passRate')
   const [grade, setGrade] = useState<number | undefined>()
+  const [nationality, setNationality] = useState<Nationality | undefined>()
 
   function toggleYear(y: string) {
     setSelectedYears(prev =>
@@ -39,8 +40,8 @@ export default function Comparison({ lang }: ComparisonProps) {
 
   const chartData = useMemo(() => {
     return selectedYears.sort().map(yearId => {
-      const records = grade
-        ? filterRecords(dataStore.getRecordsByYear(yearId), { grade })
+      const records = (grade || nationality)
+        ? filterRecords(dataStore.getRecordsByYear(yearId), { grade, nationality })
         : dataStore.getRecordsByYear(yearId)
       const cycle = records.length > 0 ? getCycle(records[0].grade) : (grade ? getCycle(grade) : 3 as const)
       const stats = computeSubjectStats(records, subject, 'annual', cycle)
@@ -54,18 +55,18 @@ export default function Comparison({ lang }: ComparisonProps) {
         count: stats.count,
       }
     })
-  }, [selectedYears, subject, grade])
+  }, [selectedYears, subject, grade, nationality])
 
   // School-wide data: % students with overall avg ≥ 75 per year
   const schoolData = useMemo(() => {
     return selectedYears.sort().map(yearId => {
-      const records = grade
-        ? filterRecords(dataStore.getRecordsByYear(yearId), { grade })
+      const records = (grade || nationality)
+        ? filterRecords(dataStore.getRecordsByYear(yearId), { grade, nationality })
         : dataStore.getRecordsByYear(yearId)
       const s = computeSchoolStats(records, 'annual')
       return { year: yearId, above75Rate: s.above75Rate, mean: s.mean, count: s.count }
     })
-  }, [selectedYears, grade])
+  }, [selectedYears, grade, nationality])
 
   const subjects = Object.entries(SUBJECT_LABELS) as [SubjectCode, { ar: string; en: string }][]
 
@@ -104,6 +105,16 @@ export default function Comparison({ lang }: ComparisonProps) {
             {METRICS.map(m => (
               <option key={m.key} value={m.key}>{ar ? m.labelAr : m.labelEn}</option>
             ))}
+          </select>
+        </div>
+
+        {/* Nationality */}
+        <div className="min-w-[130px]">
+          <label className="label">{ar ? 'الجنسية' : 'Nationality'}</label>
+          <select className="input" value={nationality ?? ''} onChange={e => setNationality((e.target.value as Nationality) || undefined)}>
+            <option value="">{ar ? 'الكل' : 'All'}</option>
+            <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+            <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
           </select>
         </div>
       </div>

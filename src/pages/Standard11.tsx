@@ -6,7 +6,7 @@ import {
 import { dataStore } from '@/store/dataStore'
 import { computeAchievementIndicators, computeGradeStats, round2 } from '@/utils/statistics'
 import { ANALYSIS_SUBJECTS, SUBJECT_LABELS } from '@/utils/subjectMapping'
-import type { Language, SubjectCode, Cycle } from '@/types'
+import type { Language, SubjectCode, Cycle, Nationality } from '@/types'
 import { getCycle, getPassMark } from '@/utils/subjectMapping'
 
 interface Props { lang: Language }
@@ -229,8 +229,12 @@ export default function Standard11({ lang }: Props) {
   const [schoolSem, setSchoolSem] = useState<SemFilter>('annual')
   const [selectedSubj, setSelectedSubj] = useState<SubjectCode>('arabic')
   const [selectedGrade, setSelectedGrade] = useState<number>(0) // 0 = not yet set
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
 
-  const records = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
+  const records = useMemo(() => {
+    const all = dataStore.getRecordsByYear(yearId)
+    return nationality ? all.filter(r => r.student.nationality === nationality) : all
+  }, [yearId, nationality])
 
   // Auto-select first available grade
   const availableGrades = useMemo(() => {
@@ -412,13 +416,24 @@ export default function Standard11({ lang }: Props) {
             {ar ? 'المواد الأساسية التسع — فصول دراسية ودرجة سنوية' : '9 core subjects — semesters & annual grade'}
           </p>
         </div>
-        <select
-          value={yearId}
-          onChange={e => setYearId(e.target.value)}
-          className="border rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-gray-800 dark:border-gray-600"
-        >
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
+        <div className="flex gap-2 flex-wrap items-center">
+          <select
+            value={yearId}
+            onChange={e => setYearId(e.target.value)}
+            className="border rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-gray-800 dark:border-gray-600"
+          >
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select
+            value={nationality ?? ''}
+            onChange={e => setNationality((e.target.value || undefined) as Nationality | undefined)}
+            className="border rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-gray-800 dark:border-gray-600"
+          >
+            <option value="">{ar ? 'كل الجنسيات' : 'All Nationalities'}</option>
+            <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+            <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
+          </select>
+        </div>
       </div>
 
       {/* Summary bar chart */}

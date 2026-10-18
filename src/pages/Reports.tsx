@@ -1533,7 +1533,7 @@ export default function Reports({ lang }: ReportsProps) {
           lang={lang}
           showSubject={false}
           showSemester={true}
-          showNationality={false}
+          showNationality
         />
       </div>
 

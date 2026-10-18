@@ -116,8 +116,21 @@ export default function Upload({ lang }: UploadProps) {
         const sem = useNoor ? (scores[0]?.semester ?? termSemester) : termSemester
         dataStore.importTermScores(yearId.trim(), sem, scores)
         if (useNoor) {
-          const { semester: noorSem, formative, exam } = parseNoorFormativeExam(buffer, yearId.trim())
+          const { semester: noorSem, formative, exam, nationalityMap } = parseNoorFormativeExam(buffer, yearId.trim())
           dataStore.mergeFormativeExam(yearId.trim(), noorSem, formative, exam)
+          // Apply nationality data extracted from NOOR file to student records
+          if (Object.keys(nationalityMap).length > 0) {
+            for (const yr of dataStore.getYears()) {
+              const updated = dataStore.getRecordsByYear(yr).map(r => {
+                const nat = nationalityMap[r.student.id]
+                if (!nat || nat === 'unknown') return r
+                return { ...r, student: { ...r.student, nationality: nat } }
+              })
+              if (updated.some((r, i) => r !== dataStore.getRecordsByYear(yr)[i])) {
+                dataStore.importYearData(yr, updated)
+              }
+            }
+          }
         }
         const subjects = [...new Set(scores.map(s => s.subjectCode))]
         setState({

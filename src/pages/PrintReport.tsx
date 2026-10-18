@@ -20,7 +20,7 @@ import {
   SUBJECT_LABELS, ANALYSIS_SUBJECTS, getCycle, getPassMark,
   isSubjectRelevantForGrade,
 } from '@/utils/subjectMapping'
-import type { Language, SubjectCode } from '@/types'
+import type { Language, SubjectCode, Nationality } from '@/types'
 import clsx from 'clsx'
 
 interface PrintReportProps { lang: Language }
@@ -198,8 +198,12 @@ export default function PrintReport({ lang }: PrintReportProps) {
   const [yearId, setYearId] = useState(years.slice(-1)[0] || '')
   const [semester, setSemester] = useState<'annual' | '1' | '2' | '3'>('annual')
   const [schoolName, setSchoolName] = useState('مدرسة خالد بن الوليد')
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
 
-  const records = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
+  const records = useMemo(() => {
+    const raw = dataStore.getRecordsByYear(yearId)
+    return nationality ? filterRecords(raw, { nationality }) : raw
+  }, [yearId, nationality])
   const diagScores = useMemo(() => dataStore.getDiagnosticScores(yearId), [yearId])
   const termScoresT1 = useMemo(() => dataStore.getTermScores(yearId, 1), [yearId])
   const termScoresT2 = useMemo(() => dataStore.getTermScores(yearId, 2), [yearId])
@@ -230,20 +234,31 @@ export default function PrintReport({ lang }: PrintReportProps) {
       const mean = scores.length ? round2(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
       const above75 = scores.filter(s => s >= 75).length
       const above75Rate = scores.length ? round2((above75 / scores.length) * 100) : 0
-      return { grade, inds, mean, above75Rate, count: gradeRecs.length }
+      const passMark = getPassMark(getCycle(grade))
+      const passCount = scores.filter(s => s >= passMark).length
+      const passRate = scores.length ? round2((passCount / scores.length) * 100) : 0
+      const gradeLevel = passRate < 75
+        ? { ar: 'ضعيف', level: 'weak' }
+        : above75Rate >= 70 ? { ar: 'ممتاز', level: 'excellent' }
+        : above75Rate >= 60 ? { ar: 'جيد جداً', level: 'very_good' }
+        : above75Rate >= 50 ? { ar: 'جيد', level: 'good' }
+        : { ar: 'مقبول', level: 'acceptable' }
+      return { grade, inds, mean, above75Rate, passRate, gradeLevel, count: gradeRecs.length }
     })
   }, [grades, records, semesterVal])
 
   // ── Standard 1.2 data ──
-  const allYearRecords = useMemo(() => years.map(y => ({ yearId: y, records: dataStore.getRecordsByYear(y) })), [years])
-  const latestRecords = useMemo(() => dataStore.getRecordsByYear(yearId), [yearId])
+  const allYearRecords = useMemo(() => years.map(y => {
+    const recs = dataStore.getRecordsByYear(y)
+    return { yearId: y, records: nationality ? filterRecords(recs, { nationality }) : recs }
+  }), [years, nationality])
 
   const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords), [allYearRecords])
 
   const withinSchoolData = useMemo(() => {
     return [1, 2, 3].map(sem => {
       const avgs: number[] = []
-      for (const r of latestRecords) {
+      for (const r of records) {
         const scores: number[] = []
         for (const subj of ANALYSIS_SUBJECTS) {
           if (!isSubjectRelevantForGrade(subj, r.grade)) continue
@@ -264,13 +279,13 @@ export default function PrintReport({ lang }: PrintReportProps) {
         count: avgs.length,
       }
     })
-  }, [latestRecords])
+  }, [records])
 
   const withinSubjectData = useMemo(() => {
     return ANALYSIS_SUBJECTS.map(subj => {
       const cells = [1, 2, 3].map(sem => {
         const scores: number[] = []
-        for (const r of latestRecords) {
+        for (const r of records) {
           if (!isSubjectRelevantForGrade(subj, r.grade)) continue
           const g = r.grades[subj]
           if (!g) continue
@@ -282,17 +297,41 @@ export default function PrintReport({ lang }: PrintReportProps) {
       })
       return { subj, cells }
     })
-  }, [latestRecords])
+  }, [records])
 
-  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(latestRecords, sem as 1 | 2 | 3) })), [latestRecords])
+  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(records, sem as 1 | 2 | 3) })), [records])
 
   const progressRates = useMemo(() => computeProgressRates(allYearRecords), [allYearRecords])
 
+  const schoolLevelProgress = useMemo(() => {
+    const results = []
+    for (let i = 0; i < years.length - 1; i++) {
+      const yearFrom = years[i]
+      const yearTo = years[i + 1]
+      const recsFrom = allYearRecords.find(y => y.yearId === yearFrom)?.records ?? []
+      const recsTo = allYearRecords.find(y => y.yearId === yearTo)?.records ?? []
+      const mapFrom = new Map(recsFrom.filter(r => r.annualAvg !== null).map(r => [r.student, r.annualAvg as number]))
+      const mapTo = new Map(recsTo.filter(r => r.annualAvg !== null).map(r => [r.student, r.annualAvg as number]))
+      let improved = 0, regressed = 0, stable = 0
+      for (const [id, avgFrom] of mapFrom) {
+        const avgTo = mapTo.get(id)
+        if (avgTo === undefined) continue
+        const diff = avgTo - avgFrom
+        if (diff > 2) improved++
+        else if (diff < -2) regressed++
+        else stable++
+      }
+      const total = improved + regressed + stable
+      const totalFrom = recsFrom.filter(r => r.annualAvg !== null).length
+      results.push({ yearFrom, yearTo, improved, regressed, stable, total, totalFrom })
+    }
+    return results
+  }, [allYearRecords, years])
+
   const multiYearSubjectAvgs = useMemo(() => {
-    const allCodes = [...new Set(years.flatMap(y => dataStore.getRecordsByYear(y).flatMap(r => Object.keys(r.grades) as SubjectCode[])))]
+    const allCodes = ANALYSIS_SUBJECTS.filter(code => allYearRecords.some(({ records: recs }) => recs.some(r => r.grades[code])))
     const subjectAvgs: Record<string, number[]> = {}
-    const chartRows = years.map(y => {
-      const recs = dataStore.getRecordsByYear(y)
+    const chartRows = allYearRecords.map(({ yearId: y, records: recs }) => {
       const row: Record<string, number | string> = { year: y }
       for (const code of allCodes) {
         const scores = extractScores(recs, code, 'annual')
@@ -304,7 +343,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       return row
     })
     return { chartRows, allCodes, subjectAvgs }
-  }, [years])
+  }, [allYearRecords])
 
   // ── Standard 1.3 data ──
   const allFormativeGapsS1 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 1, undefined, records), [formativeScores, examScores, records])
@@ -357,21 +396,21 @@ export default function PrintReport({ lang }: PrintReportProps) {
   // ── Overview stats ──
   const totals = useMemo(() => {
     const n = records.length
-    const passCount = records.filter(r => r.status === 'pass').length
-    const failCount = records.filter(r => r.status === 'fail').length
     const scores = records.map(r => r.annualAvg).filter(v => v !== null) as number[]
+    const passCount = records.filter(r => r.annualAvg !== null && r.annualAvg >= getPassMark(getCycle(r.grade))).length
+    const failCount = scores.length - passCount
     const above75 = scores.filter(s => s >= 75).length
     const avg = scores.length ? round2(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+    const passRate = scores.length ? round2((passCount / scores.length) * 100) : 0
+    const r75 = scores.length ? (above75 / scores.length) * 100 : 0
     return {
       total: n,
-      passRate: n ? round2((passCount / n) * 100) : 0,
-      failRate: n ? round2((failCount / n) * 100) : 0,
+      passRate,
+      failRate: scores.length ? round2((failCount / scores.length) * 100) : 0,
       above75Rate: scores.length ? round2((above75 / scores.length) * 100) : 0,
       avg,
       schoolLevel: (() => {
-        const r75 = scores.length ? (above75 / scores.length) * 100 : 0
-        const pr = n ? (passCount / n) * 100 : 0
-        if (pr < 75) return { ar: 'ضعيف', level: 'weak' }
+        if (passRate < 75) return { ar: 'ضعيف', level: 'weak' }
         if (r75 >= 70) return { ar: 'ممتاز', level: 'excellent' }
         if (r75 >= 60) return { ar: 'جيد جداً', level: 'very_good' }
         if (r75 >= 50) return { ar: 'جيد', level: 'good' }
@@ -412,6 +451,14 @@ export default function PrintReport({ lang }: PrintReportProps) {
             <option value="1">{ar ? 'الفصل الأول' : 'Term 1'}</option>
             <option value="2">{ar ? 'الفصل الثاني' : 'Term 2'}</option>
             <option value="3">{ar ? 'الفصل الثالث' : 'Term 3'}</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">{ar ? 'الجنسية' : 'Nationality'}</label>
+          <select className="input" value={nationality ?? ''} onChange={e => setNationality((e.target.value as Nationality) || undefined)}>
+            <option value="">{ar ? 'الكل' : 'All'}</option>
+            <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+            <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
           </select>
         </div>
         <div>
@@ -642,6 +689,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                     <th className="border px-3 py-2 text-start font-bold" style={{ color: C.primary }}>الصف</th>
                     <th className="border px-2 py-2 text-center">الطلاب</th>
                     <th className="border px-2 py-2 text-center">المتوسط</th>
+                    <th className="border px-2 py-2 text-center">نسبة النجاح</th>
                     <th className="border px-2 py-2 text-center">فوق 75%</th>
                     <th className="border px-2 py-2 text-center">المستوى</th>
                   </tr>
@@ -652,16 +700,14 @@ export default function PrintReport({ lang }: PrintReportProps) {
                       <td className="border px-3 py-2 font-semibold">الصف {gi.grade}</td>
                       <td className="border px-2 py-2 text-center">{gi.count}</td>
                       <td className="border px-2 py-2 text-center font-semibold">{gi.mean}%</td>
-                      <td className="border px-2 py-2 text-center font-bold" style={{ color: gi.above75Rate >= 60 ? C.excellent : gi.above75Rate >= 40 ? C.good : C.below }}>
+                      <td className="border px-2 py-2 text-center font-semibold" style={{ color: gi.passRate >= 75 ? C.excellent : C.below }}>
+                        {gi.passRate}%
+                      </td>
+                      <td className="border px-2 py-2 text-center font-bold" style={{ color: levelColor(gi.gradeLevel.level) }}>
                         {gi.above75Rate}%
                       </td>
                       <td className="border px-2 py-2 text-center">
-                        {gi.inds.length > 0 && (() => {
-                          const avgR = round2(gi.inds.reduce((s, x) => s + x.above75Rate, 0) / gi.inds.length)
-                          const lvl = avgR >= 70 ? 'excellent' : avgR >= 60 ? 'very_good' : avgR >= 50 ? 'good' : avgR >= 40 ? 'acceptable' : 'weak'
-                          const lbls: Record<string, string> = { excellent: 'ممتاز', very_good: 'جيد جداً', good: 'جيد', acceptable: 'مقبول', weak: 'ضعيف' }
-                          return <span className={clsx('px-2 py-0.5 rounded text-xs border font-semibold', levelBg(lvl))}>{lbls[lvl]}</span>
-                        })()}
+                        <span className={clsx('px-2 py-0.5 rounded text-xs border font-semibold', levelBg(gi.gradeLevel.level))}>{gi.gradeLevel.ar}</span>
                       </td>
                     </tr>
                   ))}
@@ -771,7 +817,11 @@ export default function PrintReport({ lang }: PrintReportProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {multiYearSubjectAvgs.allCodes.map((code, i) => {
+                      {[...multiYearSubjectAvgs.allCodes].sort((a, b) => {
+                        const lastA = (multiYearSubjectAvgs.subjectAvgs[a] ?? []).filter(v => !isNaN(v)).slice(-1)[0] ?? 0
+                        const lastB = (multiYearSubjectAvgs.subjectAvgs[b] ?? []).filter(v => !isNaN(v)).slice(-1)[0] ?? 0
+                        return lastB - lastA
+                      }).map((code, i) => {
                         const avgs = multiYearSubjectAvgs.subjectAvgs[code] ?? []
                         const valid = avgs.filter(v => !isNaN(v))
                         const diff = valid.length >= 2 ? round2(valid[valid.length - 1] - valid[0]) : null
@@ -922,84 +972,80 @@ export default function PrintReport({ lang }: PrintReportProps) {
 
           {/* Part 3: Progress rates */}
           <SubSection title="الجزء 3 — نسب التقدم والتراجع">
-            {progressRates.length > 0 && progressRates[0].transitions.length > 0 ? (
+            {schoolLevelProgress.length > 0 || (progressRates.length > 0 && progressRates[0].transitions.length > 0) ? (
               <>
-                <SubLabel>أ) نسب التقدم والتراجع بين السنوات — مستوى المدرسة</SubLabel>
-                {progressRates[0].transitions.map(t => {
-                  let totImp = 0, totReg = 0, totSta = 0
-                  for (const sp of progressRates) {
-                    const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
-                    if (tr) { totImp += tr.improved; totReg += tr.regressed; totSta += tr.stable }
-                  }
-                  const tot = totImp + totReg + totSta
+                <SubLabel>أ) نسب التقدم والتراجع بين السنوات — مستوى المدرسة (طلاب فريدون)</SubLabel>
+                {schoolLevelProgress.map(slp => (
+                  <div key={slp.yearFrom} className="mb-4 p-4 border rounded-xl">
+                    <div className="text-sm font-semibold mb-3">{slp.yearFrom} → {slp.yearTo}</div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-green-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-gray-500 mb-1">تقدموا</div>
+                        <div className="text-2xl font-bold text-green-600">{slp.total > 0 ? ((slp.improved / slp.total) * 100).toFixed(1) : '0'}%</div>
+                        <div className="text-xs text-gray-400">{slp.improved} من {slp.total} طالب</div>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-gray-500 mb-1">مستقرون</div>
+                        <div className="text-2xl font-bold text-gray-500">{slp.total > 0 ? ((slp.stable / slp.total) * 100).toFixed(1) : '0'}%</div>
+                        <div className="text-xs text-gray-400">{slp.stable} من {slp.total} طالب</div>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-3 text-center">
+                        <div className="text-xs text-gray-500 mb-1">تراجعوا</div>
+                        <div className="text-2xl font-bold text-red-500">{slp.total > 0 ? ((slp.regressed / slp.total) * 100).toFixed(1) : '0'}%</div>
+                        <div className="text-xs text-gray-400">{slp.regressed} من {slp.total} طالب</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <SubLabel>ب) نسب التقدم والتراجع بين السنوات — حسب المادة (% من إجمالي طلاب المدرسة)</SubLabel>
+                {(progressRates[0]?.transitions ?? []).map(t => {
+                  const slp = schoolLevelProgress.find(s => s.yearFrom === t.yearFrom && s.yearTo === t.yearTo)
+                  const schoolTotal = slp?.totalFrom ?? 1
                   return (
-                    <div key={t.yearFrom} className="mb-4 p-4 border rounded-xl">
-                      <div className="text-sm font-semibold mb-3">{t.yearFrom} → {t.yearTo}</div>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-green-50 rounded-lg p-3 text-center">
-                          <div className="text-xs text-gray-500 mb-1">تقدموا</div>
-                          <div className="text-2xl font-bold text-green-600">{tot > 0 ? ((totImp / tot) * 100).toFixed(1) : '0'}%</div>
-                          <div className="text-xs text-gray-400">{totImp} طالب</div>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-3 text-center">
-                          <div className="text-xs text-gray-500 mb-1">مستقرون</div>
-                          <div className="text-2xl font-bold text-gray-500">{tot > 0 ? ((totSta / tot) * 100).toFixed(1) : '0'}%</div>
-                          <div className="text-xs text-gray-400">{totSta} طالب</div>
-                        </div>
-                        <div className="bg-red-50 rounded-lg p-3 text-center">
-                          <div className="text-xs text-gray-500 mb-1">تراجعوا</div>
-                          <div className="text-2xl font-bold text-red-500">{tot > 0 ? ((totReg / tot) * 100).toFixed(1) : '0'}%</div>
-                          <div className="text-xs text-gray-400">{totReg} طالب</div>
-                        </div>
+                    <div key={t.yearFrom} className="mb-4">
+                      <TableTitle>جدول نسب التقدم — {t.yearFrom} إلى {t.yearTo} — حسب المادة</TableTitle>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr style={{ background: '#f3f4f6' }}>
+                              <th className="border px-3 py-2 text-start">المادة</th>
+                              <th className="border px-2 py-2 text-center">المقارَنون</th>
+                              <th className="border px-2 py-2 text-center text-green-600">تقدموا % من الكل</th>
+                              <th className="border px-2 py-2 text-center text-gray-400">مستقرون</th>
+                              <th className="border px-2 py-2 text-center text-red-500">تراجعوا % من الكل</th>
+                              <th className="border px-2 py-2 text-center">معدل التغير</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {progressRates.map((sp, i) => {
+                              const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
+                              if (!tr || tr.total === 0) return null
+                              return (
+                                <tr key={sp.subject} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                  <td className="border px-3 py-2 font-medium">{sp.subjectNameAr}</td>
+                                  <td className="border px-2 py-2 text-center text-gray-500">{tr.total}</td>
+                                  <td className="border px-2 py-2 text-center">
+                                    <span className="text-green-600 font-semibold">{((tr.improved / schoolTotal) * 100).toFixed(1)}%</span>
+                                    <span className="text-xs text-gray-400 ms-1">({tr.improved})</span>
+                                  </td>
+                                  <td className="border px-2 py-2 text-center text-gray-400">{tr.stable}</td>
+                                  <td className="border px-2 py-2 text-center">
+                                    <span className="text-red-500 font-semibold">{((tr.regressed / schoolTotal) * 100).toFixed(1)}%</span>
+                                    <span className="text-xs text-gray-400 ms-1">({tr.regressed})</span>
+                                  </td>
+                                  <td className={`border px-2 py-2 text-center font-semibold ${(tr.meanDiff ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                    {tr.meanDiff !== null ? `${tr.meanDiff >= 0 ? '+' : ''}${tr.meanDiff.toFixed(2)}` : '—'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   )
                 })}
-
-                <SubLabel>ب) نسب التقدم والتراجع بين السنوات — حسب المادة</SubLabel>
-                {progressRates[0].transitions.map(t => (
-                  <div key={t.yearFrom} className="mb-4">
-                    <TableTitle>جدول نسب التقدم — {t.yearFrom} إلى {t.yearTo} — حسب المادة</TableTitle>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border-collapse">
-                        <thead>
-                          <tr style={{ background: '#f3f4f6' }}>
-                            <th className="border px-3 py-2 text-start">المادة</th>
-                            <th className="border px-2 py-2 text-center">المقارَنون</th>
-                            <th className="border px-2 py-2 text-center text-green-600">تقدموا</th>
-                            <th className="border px-2 py-2 text-center text-gray-400">مستقرون</th>
-                            <th className="border px-2 py-2 text-center text-red-500">تراجعوا</th>
-                            <th className="border px-2 py-2 text-center">معدل التغير</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {progressRates.map((sp, i) => {
-                            const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
-                            if (!tr || tr.total === 0) return null
-                            return (
-                              <tr key={sp.subject} style={{ background: i % 2 === 0 ? 'white' : '#f9fafb' }}>
-                                <td className="border px-3 py-2 font-medium">{sp.subjectNameAr}</td>
-                                <td className="border px-2 py-2 text-center text-gray-500">{tr.total}</td>
-                                <td className="border px-2 py-2 text-center">
-                                  <span className="text-green-600 font-semibold">{tr.improved}</span>
-                                  <span className="text-xs text-gray-400 ms-1">({tr.improvedPct.toFixed(1)}%)</span>
-                                </td>
-                                <td className="border px-2 py-2 text-center text-gray-400">{tr.stable}</td>
-                                <td className="border px-2 py-2 text-center">
-                                  <span className="text-red-500 font-semibold">{tr.regressed}</span>
-                                  <span className="text-xs text-gray-400 ms-1">({tr.regressedPct.toFixed(1)}%)</span>
-                                </td>
-                                <td className={`border px-2 py-2 text-center font-semibold ${(tr.meanDiff ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                  {tr.meanDiff !== null ? `${tr.meanDiff >= 0 ? '+' : ''}${tr.meanDiff.toFixed(2)}` : '—'}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
               </>
             ) : (
               <p className="text-xs text-gray-400 p-4 bg-amber-50 rounded-lg">يلزم بيانات سنتين على الأقل لحساب نسب التقدم</p>
@@ -1081,19 +1127,22 @@ export default function PrintReport({ lang }: PrintReportProps) {
             {allFormativeGapsS1.length > 0 ? (
               <>
                 <div className="mb-4">
-                  <ChartTitle>مخطط الفجوة: التكويني مقابل الاختبار — الفصل الأول</ChartTitle>
+                  <ChartTitle>مقارنة متوسط التكويني مقابل الاختبار /100 — الفصل الأول</ChartTitle>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart
-                      data={allFormativeGapsS1.map(g => ({ name: subjectName(g.subjectCode), gap: g.gap ?? 0 }))}
+                      data={allFormativeGapsS1.map(g => ({
+                        name: subjectName(g.subjectCode),
+                        'التكويني /100': g.avgFormative ?? 0,
+                        'الاختبار /100': g.avgExam ?? 0,
+                      }))}
                       margin={{ top: 5, right: 20, left: 0, bottom: 40 }}>
                       <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                       <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`} />
-                      <ReferenceLine y={0} stroke="#6b7280" />
-                      <Bar dataKey="gap" name="الفجوة %" radius={[3, 3, 0, 0]}>
-                        {allFormativeGapsS1.map((g, i) => <Cell key={i} fill={(g.gap ?? 0) < 0 ? '#ef4444' : '#22c55e'} />)}
-                      </Bar>
+                      <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
+                      <Tooltip formatter={(v: number) => `${v.toFixed(1)}`} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="التكويني /100" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="الاختبار /100" fill="#22c55e" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

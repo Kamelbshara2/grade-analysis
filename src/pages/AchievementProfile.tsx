@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts'
 import { t } from '@/i18n/translations'
-import type { Language } from '@/types'
+import type { Language, Nationality } from '@/types'
 import { dataStore } from '@/store/dataStore'
 import { filterRecords, computeAchievementIndicators, getProportionLabel, round2 } from '@/utils/statistics'
 import { SUBJECT_LABELS } from '@/utils/subjectMapping'
@@ -47,13 +47,14 @@ export default function AchievementProfile({ lang }: AchievementProfileProps) {
   const [grade, setGrade] = useState<number | undefined>(undefined)
   const [track, setTrack] = useState<string | undefined>(undefined)
   const [semester, setSemester] = useState<string>('annual')
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
 
   const grades = useMemo(() => dataStore.getUniqueGrades(yearId || undefined), [yearId])
 
   const records = useMemo(() => {
     const raw = yearId ? dataStore.getRecordsByYear(yearId) : dataStore.getAllRecords()
-    return filterRecords(raw, { grade, track: track as any })
-  }, [yearId, grade, track])
+    return filterRecords(raw, { grade, track: track as any, nationality })
+  }, [yearId, grade, track, nationality])
 
   const indicators = useMemo(
     () => computeAchievementIndicators(records, semester as any),
@@ -126,6 +127,14 @@ export default function AchievementProfile({ lang }: AchievementProfileProps) {
             <option value="s1">{ar ? 'الفصل الأول' : 'Semester 1'}</option>
             <option value="s2">{ar ? 'الفصل الثاني' : 'Semester 2'}</option>
             <option value="s3">{ar ? 'الفصل الثالث' : 'Semester 3'}</option>
+          </select>
+        </div>
+        <div className="min-w-[130px]">
+          <label className="label">{ar ? 'الجنسية' : 'Nationality'}</label>
+          <select className="input" value={nationality ?? ''} onChange={e => setNationality((e.target.value as Nationality) || undefined)}>
+            <option value="">{ar ? 'الكل' : 'All'}</option>
+            <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+            <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
           </select>
         </div>
       </div>
