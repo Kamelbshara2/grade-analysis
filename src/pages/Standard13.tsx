@@ -6,7 +6,7 @@ import {
 import { dataStore } from '@/store/dataStore'
 import { computeFormativeExamGaps, computeSemesterGaps, round2 } from '@/utils/statistics'
 import { ANALYSIS_SUBJECTS, SUBJECT_LABELS, isSubjectRelevantForGrade } from '@/utils/subjectMapping'
-import type { Language, SubjectCode } from '@/types'
+import type { Language, SubjectCode, Nationality } from '@/types'
 
 interface Props { lang: Language }
 
@@ -40,10 +40,24 @@ export default function Standard13({ lang }: Props) {
   const [part, setPart] = useState<Part>('formative')
   const [section, setSection] = useState<Section>('school')
   const [semFilter, setSemFilter] = useState<1 | 3>(1)
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
 
-  const records = useMemo(() => dataStore.getRecordsByYear(latestYear), [latestYear])
-  const formativeScores = useMemo(() => dataStore.getFormativeScores(latestYear), [latestYear])
-  const examScores = useMemo(() => dataStore.getExamScores(latestYear), [latestYear])
+  const records = useMemo(() => {
+    const all = dataStore.getRecordsByYear(latestYear)
+    return nationality ? all.filter(r => r.student.nationality === nationality) : all
+  }, [latestYear, nationality])
+  const formativeScores = useMemo(() => {
+    const all = dataStore.getFormativeScores(latestYear)
+    if (!nationality) return all
+    const ids = new Set(dataStore.getRecordsByYear(latestYear).filter(r => r.student.nationality === nationality).map(r => r.student.id))
+    return all.filter(s => ids.has(s.studentId))
+  }, [latestYear, nationality])
+  const examScores = useMemo(() => {
+    const all = dataStore.getExamScores(latestYear)
+    if (!nationality) return all
+    const ids = new Set(dataStore.getRecordsByYear(latestYear).filter(r => r.student.nationality === nationality).map(r => r.student.id))
+    return all.filter(s => ids.has(s.studentId))
+  }, [latestYear, nationality])
 
   const grades = useMemo(() => [...new Set(records.map(r => r.grade))].sort((a, b) => a - b), [records])
 
@@ -118,6 +132,20 @@ export default function Standard13({ lang }: Props) {
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           {ar ? `عام ${latestYear} — الفجوة بين التقويم التكويني والاختبار والفجوة بين الفصول` : `Year ${latestYear} — Formative/Exam gap and semester-to-semester gaps`}
         </p>
+      </div>
+
+      {/* Nationality filter */}
+      <div className="flex gap-2 items-center">
+        <span className="text-sm text-gray-500">{ar ? 'الجنسية:' : 'Nationality:'}</span>
+        <select
+          value={nationality ?? ''}
+          onChange={e => setNationality((e.target.value || undefined) as Nationality | undefined)}
+          className="border rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-gray-800 dark:border-gray-600"
+        >
+          <option value="">{ar ? 'الكل' : 'All'}</option>
+          <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+          <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
+        </select>
       </div>
 
       {/* Part toggle */}

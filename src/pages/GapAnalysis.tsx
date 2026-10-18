@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine, Cell, Legend,
 } from 'recharts'
-import type { Language, SubjectCode, Semester } from '@/types'
+import type { Language, SubjectCode, Semester, Nationality } from '@/types'
 import { dataStore } from '@/store/dataStore'
 import { SUBJECT_LABELS, ANALYSIS_SUBJECTS } from '@/utils/subjectMapping'
 import { round2, computeAchievementIndicators } from '@/utils/statistics'
@@ -74,6 +74,7 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
   const [yearId, setYearId] = useState(() => years[years.length - 1] ?? '')
   const [grade, setGrade] = useState<number | undefined>(undefined)
   const [section, setSection] = useState<string | undefined>(undefined)
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
   const [activeTab, setActiveTab] = useState<Tab>('internal')
 
   const grades = useMemo(() => {
@@ -101,6 +102,12 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
       fScores = fScores.filter(s => s.section === section)
       eScores = eScores.filter(s => s.section === section)
       records = records.filter(r => r.section === section)
+    }
+    if (nationality) {
+      const natIds = new Set(records.filter(r => r.student.nationality === nationality).map(r => r.student.id))
+      fScores = fScores.filter(s => natIds.has(s.studentId))
+      eScores = eScores.filter(s => natIds.has(s.studentId))
+      records = records.filter(r => r.student.nationality === nationality)
     }
 
     const codes = [...new Set([
@@ -179,18 +186,19 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
     }
 
     return { gapRows: rows, schoolSummary }
-  }, [yearId, grade, section])
+  }, [yearId, grade, section, nationality])
 
   // Achievement indicator (1.1) — from student records
   const achievementRows = useMemo(() => {
     const records = dataStore.getRecordsByYear(yearId)
-    const filtered = grade !== undefined
+    let filtered = grade !== undefined
       ? records.filter(r => r.grade === grade && (!section || r.section === section))
       : section ? records.filter(r => r.section === section) : records
+    if (nationality) filtered = filtered.filter(r => r.student.nationality === nationality)
 
     const indicators = computeAchievementIndicators(filtered, 'annual')
     return indicators.filter(ind => ANALYSIS_SUBJECTS.includes(ind.subjectCode))
-  }, [yearId, grade, section])
+  }, [yearId, grade, section, nationality])
 
   // School-overall achievement (average of subject pass rates across analysis subjects)
   const schoolAchievement = useMemo(() => {
@@ -264,6 +272,14 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
             </select>
           </div>
         )}
+        <div className="min-w-[130px]">
+          <label className="label">{ar ? 'الجنسية' : 'Nationality'}</label>
+          <select className="input" value={nationality ?? ''} onChange={e => setNationality((e.target.value || undefined) as Nationality | undefined)}>
+            <option value="">{ar ? 'الكل' : 'All'}</option>
+            <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+            <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
+          </select>
+        </div>
       </div>
 
       {/* School-wide summary cards (out of 100) */}

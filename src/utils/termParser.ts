@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import type { TermScore, SubjectCode } from '@/types'
+import type { TermScore, SubjectCode, Nationality } from '@/types'
 
 /**
  * Normalise a column header to a SubjectCode using case-insensitive, trimmed
@@ -163,11 +163,46 @@ export function parseTermFile(buffer: ArrayBuffer, yearId: string, semester: 1 |
   return scores
 }
 
+/** Detect the section column index from row1 header labels */
+function detectMetaCols(row1: (string | number | null)[], row2: (string | number | null)[]): {
+  sectionCol: number; nationalityCol: number
+} {
+  let sectionCol = -1
+  let nationalityCol = -1
+  // Scan row2 for metadata labels (first ~10 cols)
+  for (let c = 0; c < Math.min(row2.length, 15); c++) {
+    const label = String(row2[c] ?? '').trim()
+    const label1 = String(row1[c] ?? '').trim()
+    if ((label.includes('الشعبة') || label1.includes('الشعبة') || label.includes('القسم') || label1.includes('القسم')) && sectionCol === -1) {
+      sectionCol = c
+    }
+    if ((label.includes('الجنسية') || label1.includes('الجنسية')) && nationalityCol === -1) {
+      nationalityCol = c
+    }
+  }
+  return { sectionCol, nationalityCol }
+}
+
+function extractSection(val: unknown): string {
+  const s = String(val ?? '').trim()
+  const slashMatch = s.match(/\/(\d+)$/)
+  if (slashMatch) return slashMatch[1]
+  const numMatch = s.match(/\d+/)
+  return numMatch ? numMatch[0] : '1'
+}
+
+function extractNationality(val: unknown): Nationality {
+  const s = String(val ?? '').trim()
+  if (s.includes('الإمارات') || s.includes('الامارات')) return 'citizen'
+  if (s === '') return 'unknown'
+  return 'expat'
+}
+
 /**
  * Parse Ministry NOOR term results file.
  * Sheet "تحليل النتائج": row1=subject names (merged), row2=sub-column labels, rows3+=data.
  * Auto-detects semester from row2 term label (الفصل الاول/الثاني/الثالث).
- * Merges variant columns for the same subject (takes best non-null score).
+ * Scans ALL columns (not just after col 16) to catch early subjects like Islamic/Math/Social/Science.
  */
 export function parseNoorTermFile(buffer: ArrayBuffer, yearId: string): TermScore[] {
   const wb = XLSX.read(buffer, { type: 'array' })
@@ -194,28 +229,23 @@ export function parseNoorTermFile(buffer: ArrayBuffer, yearId: string): TermScor
   }
   const termLabel = Object.keys(termLabelMap).find(k => termLabelMap[k] === semester)!
 
-  // Find subject start columns (0-indexed, skip first 16 fixed cols)
-  const subjectStarts: { col: number; name: string }[] = []
-  for (let i = 16; i < row1.length; i++) {
-    if (row1[i]) subjectStarts.push({ col: i, name: String(row1[i]) })
-  }
+  const { sectionCol } = detectMetaCols(row1, row2)
 
-  // Map subjectCode → [termScoreColIndex] — uses normalizeSubjectName for matching
+  // Scan row2 for term-score columns and resolve subject from row1
+  // For each column where row2 === termLabel, find subject name in row1 (current or nearest left)
   const codeTermCols = new Map<SubjectCode, number[]>()
-  for (let i = 0; i < subjectStarts.length; i++) {
-    const { col: start, name } = subjectStarts[i]
-    const end = i + 1 < subjectStarts.length ? subjectStarts[i + 1].col - 1 : row1.length - 1
-
-    const code = normalizeSubjectName(name)
-    if (!code) continue
-
-    for (let c = start; c <= end; c++) {
-      if (String(row2[c] || '') === termLabel) {
-        if (!codeTermCols.has(code)) codeTermCols.set(code, [])
-        codeTermCols.get(code)!.push(c)
-        break
-      }
+  for (let c = 0; c < row2.length; c++) {
+    if (String(row2[c] || '').trim() !== termLabel) continue
+    // Find the subject name: scan row1 leftward from c
+    let subjectName = ''
+    for (let sc = c; sc >= 0; sc--) {
+      const v = String(row1[sc] ?? '').trim()
+      if (v) { subjectName = v; break }
     }
+    const code = normalizeSubjectName(subjectName)
+    if (!code) continue
+    if (!codeTermCols.has(code)) codeTermCols.set(code, [])
+    codeTermCols.get(code)!.push(c)
   }
 
   if (codeTermCols.size === 0) return []
@@ -226,17 +256,15 @@ export function parseNoorTermFile(buffer: ArrayBuffer, yearId: string): TermScor
     const row = rows[r]
     if (!row) continue
 
-    const studentId = String(row[1] ?? '').trim()
-    if (!studentId || studentId === 'رقم الطالب') continue
+    const studentId = String(row[0] ?? '').trim()
+    if (!studentId || studentId === 'رقم الطالب' || !/\d/.test(studentId)) continue
 
     const gradeStr = String(row[2] ?? '')
     const gradeMatch = gradeStr.match(/\d+/)
     const grade = gradeMatch ? parseInt(gradeMatch[0]) : 0
     if (grade < 1 || grade > 12) continue
 
-    const sectionStr = String(row[4] ?? '')
-    const secMatch = sectionStr.match(/\/(\d+)$/)
-    const section = secMatch ? secMatch[1] : '1'
+    const section = sectionCol >= 0 ? extractSection(row[sectionCol]) : extractSection(row[3])
 
     for (const [code, cols] of codeTermCols) {
       let best: number | null = null
@@ -264,22 +292,26 @@ export function isNoorTermFile(buffer: ArrayBuffer): boolean {
 
 /**
  * Extract formative (school assessment) and exam scores from a NOOR term file.
- * Returns per-student scores for the detected semester.
+ * Returns per-student scores for the detected semester, plus a nationality map.
+ *
+ * For term 2: only التقييم على مستوى المدرسة exists (no separate exam).
+ * Scans ALL columns from col 0 — works for both term1 (subjects start col 5) and term3 (col 7+).
  */
 export function parseNoorFormativeExam(buffer: ArrayBuffer, yearId: string): {
   semester: 1 | 2 | 3;
   formative: Array<{ studentId: string; subjectCode: SubjectCode; grade: number; section: string; score: number | null }>;
   exam: Array<{ studentId: string; subjectCode: SubjectCode; grade: number; section: string; score: number | null }>;
+  nationalityMap: Record<string, Nationality>;
 } {
   const wb = XLSX.read(buffer, { type: 'array' })
   const ws = wb.Sheets['تحليل النتائج']
-  if (!ws) return { semester: 1, formative: [], exam: [] }
+  if (!ws) return { semester: 1, formative: [], exam: [], nationalityMap: {} }
 
   const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, {
     header: 1, defval: null,
   }) as (string | number | null)[][]
 
-  if (rows.length < 3) return { semester: 1, formative: [], exam: [] }
+  if (rows.length < 3) return { semester: 1, formative: [], exam: [], nationalityMap: {} }
 
   const row1 = rows[0]
   const row2 = rows[1]
@@ -294,53 +326,55 @@ export function parseNoorFormativeExam(buffer: ArrayBuffer, yearId: string): {
     if (s in termLabelMap) { semester = termLabelMap[s]; break }
   }
 
-  // Find subject spans (col index where row1 is non-empty, starting after col 16)
-  const subjectStarts: { col: number; name: string }[] = []
-  for (let i = 16; i < row1.length; i++) {
-    if (row1[i]) subjectStarts.push({ col: i, name: String(row1[i]) })
-  }
+  const { sectionCol, nationalityCol } = detectMetaCols(row1, row2)
 
-  // Map subjectCode → { formativeCol, examCol } — uses normalizeSubjectName for matching
+  // Scan ALL of row2 for formative/exam labels; resolve subject from row1 (scan leftward)
   const codeFormativeCols = new Map<SubjectCode, number>()
   const codeExamCols = new Map<SubjectCode, number>()
 
-  for (let i = 0; i < subjectStarts.length; i++) {
-    const { col: start, name } = subjectStarts[i]
-    const end = i + 1 < subjectStarts.length ? subjectStarts[i + 1].col - 1 : row1.length - 1
+  for (let c = 0; c < row2.length; c++) {
+    const label = String(row2[c] ?? '').trim()
+    if (label !== 'التقييم على مستوى المدرسة' && label !== 'اختبار نهاية الفصل') continue
 
-    const code = normalizeSubjectName(name)
+    // Find subject name: scan row1 leftward from c
+    let subjectName = ''
+    for (let sc = c; sc >= 0; sc--) {
+      const v = String(row1[sc] ?? '').trim()
+      if (v) { subjectName = v; break }
+    }
+    const code = normalizeSubjectName(subjectName)
     if (!code) continue
 
-    for (let c = start; c <= end; c++) {
-      const label = String(row2[c] || '').trim()
-      if (label === 'التقييم على مستوى المدرسة' && !codeFormativeCols.has(code)) {
-        codeFormativeCols.set(code, c)
-      } else if (label === 'اختبار نهاية الفصل' && !codeExamCols.has(code)) {
-        codeExamCols.set(code, c)
-      }
+    if (label === 'التقييم على مستوى المدرسة' && !codeFormativeCols.has(code)) {
+      codeFormativeCols.set(code, c)
+    } else if (label === 'اختبار نهاية الفصل' && !codeExamCols.has(code)) {
+      codeExamCols.set(code, c)
     }
   }
 
+  // yearId accepted for signature consistency
+  void yearId
+
   const formative: Array<{ studentId: string; subjectCode: SubjectCode; grade: number; section: string; score: number | null }> = []
   const exam: Array<{ studentId: string; subjectCode: SubjectCode; grade: number; section: string; score: number | null }> = []
-
-  // yearId is used implicitly through the closure in the caller; we accept it to keep the signature consistent
-  void yearId
+  const nationalityMap: Record<string, Nationality> = {}
 
   for (let r = 2; r < rows.length; r++) {
     const row = rows[r]
     if (!row) continue
-    const studentId = String(row[1] ?? '').trim()
-    if (!studentId || studentId === 'رقم الطالب') continue
+    const studentId = String(row[0] ?? '').trim()
+    if (!studentId || studentId === 'رقم الطالب' || !/\d/.test(studentId)) continue
 
     const gradeStr = String(row[2] ?? '')
     const gradeMatch = gradeStr.match(/\d+/)
     const grade = gradeMatch ? parseInt(gradeMatch[0]) : 0
     if (grade < 1 || grade > 12) continue
 
-    const sectionStr = String(row[4] ?? '')
-    const secMatch = sectionStr.match(/\/(\d+)$/)
-    const section = secMatch ? secMatch[1] : '1'
+    const section = sectionCol >= 0 ? extractSection(row[sectionCol]) : extractSection(row[3])
+
+    if (nationalityCol >= 0) {
+      nationalityMap[studentId] = extractNationality(row[nationalityCol])
+    }
 
     for (const [code, col] of codeFormativeCols) {
       const v = row[col]
@@ -354,5 +388,5 @@ export function parseNoorFormativeExam(buffer: ArrayBuffer, yearId: string): {
     }
   }
 
-  return { semester, formative, exam }
+  return { semester, formative, exam, nationalityMap }
 }

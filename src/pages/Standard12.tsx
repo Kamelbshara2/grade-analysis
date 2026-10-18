@@ -9,7 +9,7 @@ import {
   computeGradeStats, computeProgressRates, round2,
 } from '@/utils/statistics'
 import { ANALYSIS_SUBJECTS, SUBJECT_LABELS, isSubjectRelevantForGrade } from '@/utils/subjectMapping'
-import type { Language, SubjectCode } from '@/types'
+import type { Language, SubjectCode, Nationality } from '@/types'
 
 interface Props { lang: Language }
 
@@ -45,14 +45,23 @@ export default function Standard12({ lang }: Props) {
   const [part, setPart] = useState<Part>('multiyear')
   const [section, setSection] = useState<Section>('school')
   const [selectedSubject, setSelectedSubject] = useState<SubjectCode>('math')
+  const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
 
   const latestYear = years[years.length - 1] ?? ''
 
   const allYearRecords = useMemo(() => {
-    return years.map(y => ({ yearId: y, records: dataStore.getRecordsByYear(y) }))
-  }, [years])
+    return years.map(y => ({
+      yearId: y,
+      records: nationality
+        ? dataStore.getRecordsByYear(y).filter(r => r.student.nationality === nationality)
+        : dataStore.getRecordsByYear(y),
+    }))
+  }, [years, nationality])
 
-  const latestRecords = useMemo(() => dataStore.getRecordsByYear(latestYear), [latestYear])
+  const latestRecords = useMemo(() => {
+    const all = dataStore.getRecordsByYear(latestYear)
+    return nationality ? all.filter(r => r.student.nationality === nationality) : all
+  }, [latestYear, nationality])
 
   // ---- Multi-year school trend ----
   const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords), [allYearRecords])
@@ -181,6 +190,20 @@ export default function Standard12({ lang }: Props) {
             ? 'متابعة تقدم الطلاب عبر السنوات والفصول الدراسية'
             : 'Student progress across years and semesters'}
         </p>
+      </div>
+
+      {/* Nationality filter */}
+      <div className="flex gap-2 items-center">
+        <span className="text-sm text-gray-500">{ar ? 'الجنسية:' : 'Nationality:'}</span>
+        <select
+          value={nationality ?? ''}
+          onChange={e => setNationality((e.target.value || undefined) as Nationality | undefined)}
+          className="border rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-gray-800 dark:border-gray-600"
+        >
+          <option value="">{ar ? 'الكل' : 'All'}</option>
+          <option value="citizen">{ar ? 'مواطن' : 'Citizen'}</option>
+          <option value="expat">{ar ? 'وافد' : 'Expat'}</option>
+        </select>
       </div>
 
       {/* Part toggle */}
