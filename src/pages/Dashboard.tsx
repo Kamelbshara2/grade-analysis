@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import type { Language, SubjectCode, StudentRecord, Nationality } from '@/types'
 import { dataStore } from '@/store/dataStore'
-import { SUBJECT_LABELS, CORE_SUBJECTS, getPassMark, getCycle } from '@/utils/subjectMapping'
+import { SUBJECT_LABELS, ANALYSIS_SUBJECTS, getPassMark, getCycle } from '@/utils/subjectMapping'
 import { round2, filterRecords } from '@/utils/statistics'
 import clsx from 'clsx'
 
@@ -129,7 +129,7 @@ export default function Dashboard({ lang }: DashboardProps) {
           above75Count,
         }
       })
-      .filter(s => s.count >= 3 && CORE_SUBJECTS.includes(s.subject as any))
+      .filter(s => s.count >= 3 && ANALYSIS_SUBJECTS.includes(s.subject as any))
       .sort((a, b) => b.above75Rate - a.above75Rate)
   }, [yearRecords, ar])
 
