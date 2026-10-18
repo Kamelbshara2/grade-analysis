@@ -124,12 +124,12 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
       const fRecs = fScores.filter(s => s.subjectCode === code)
       const eRecs = eScores.filter(s => s.subjectCode === code)
 
-      // All scores are stored as /100 — no weight conversion needed
-      const fs1 = avg(fRecs.map(s => s.s1))
-      const es1 = avg(eRecs.map(s => s.s1))
-      const fs2 = avg(fRecs.map(s => s.s2 ?? null))
-      const fs3 = avg(fRecs.map(s => s.s3))
-      const es3 = avg(eRecs.map(s => s.s3))
+      // Formative stored as raw /10, exam as raw /25 — normalize to /100
+      const fs1 = avg(fRecs.map(s => s.s1 !== null ? Math.min(100, s.s1 * 10) : null))
+      const es1 = avg(eRecs.map(s => s.s1 !== null ? Math.min(100, s.s1 * 4) : null))
+      const fs2 = avg(fRecs.map(s => s.s2 !== null ? Math.min(100, s.s2 * 10) : null))
+      const fs3 = avg(fRecs.map(s => s.s3 !== null ? Math.min(100, s.s3 * 10) : null))
+      const es3 = avg(eRecs.map(s => s.s3 !== null ? Math.min(100, s.s3 * 4) : null))
 
       const fs1Rate = fs1
       const es1Rate = es1
@@ -178,16 +178,16 @@ export default function GapAnalysis({ lang }: GapAnalysisProps) {
       return bScore - aScore
     })
 
-    // School-wide summary (unfiltered) — all scores already /100
+    // School-wide summary (unfiltered) — normalize formative ×10, exam ×4 to /100
     const allFS = dataStore.getFormativeScores(yearId)
     const allES = dataStore.getExamScores(yearId)
 
     const schoolSummary = {
-      avgFormS1: avg(allFS.map(s => s.s1)),
-      avgExamS1: avg(allES.map(s => s.s1)),
-      avgTeachS2: avg(allFS.map(s => s.s2 ?? null)),
-      avgFormS3: avg(allFS.map(s => s.s3)),
-      avgExamS3: avg(allES.map(s => s.s3)),
+      avgFormS1: avg(allFS.map(s => s.s1 !== null ? Math.min(100, s.s1 * 10) : null)),
+      avgExamS1: avg(allES.map(s => s.s1 !== null ? Math.min(100, s.s1 * 4) : null)),
+      avgTeachS2: avg(allFS.map(s => s.s2 !== null ? Math.min(100, s.s2 * 10) : null)),
+      avgFormS3: avg(allFS.map(s => s.s3 !== null ? Math.min(100, s.s3 * 10) : null)),
+      avgExamS3: avg(allES.map(s => s.s3 !== null ? Math.min(100, s.s3 * 4) : null)),
     }
 
     return { gapRows: rows, schoolSummary }
