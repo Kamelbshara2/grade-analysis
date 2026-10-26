@@ -110,31 +110,129 @@ function genGradeSubjectNarrative(ind: AchievementIndicator, stats: ReturnType<t
 
 function genWithinYearNarrative(data: {sem: number; mean: number | null; above75Rate: number | null; passRate: number | null; count: number}[]): string {
   const s1 = data.find(d => d.sem === 1), s2 = data.find(d => d.sem === 2), s3 = data.find(d => d.sem === 3)
-  if (!s1 || !s2 || !s3 || s1.mean == null || s2.mean == null || s3.mean == null) return ''
-  const d12 = round2(s2.mean - s1.mean), d23 = round2(s3.mean - s2.mean), d13 = round2(s3.mean - s1.mean)
-  const t12 = d12 >= 0 ? `تحسّن بمقدار +${d12}` : `تراجع بمقدار ${d12}`
-  const t23 = d23 >= 0 ? `تحسّن بمقدار +${d23}` : `تراجع بمقدار ${d23}`
-  const overall = d13 >= 2 ? 'تحسّن ملحوظ عبر العام' : d13 <= -2 ? 'تراجع ملحوظ عبر العام' : 'استقرار نسبي عبر الفصول'
-  return `بيانات التقدم داخل العام: متوسط الفصل الأول ${s1.mean.toFixed(1)}، والفصل الثاني ${s2.mean.toFixed(1)} (${t12})، والفصل الثالث ${s3.mean.toFixed(1)} (${t23}). الاتجاه الإجمالي: ${overall} (الفرق ف1→ف3: ${d13 >= 0 ? '+' : ''}${d13}).`
+  if (!s1 && !s2 && !s3) return ''
+  const lines: string[] = []
+  if (s1?.mean != null) lines.push(`• الفصل الأول (ف1): متوسط الدرجات ${s1.mean.toFixed(1)}/100، نسبة فوق 75%: ${s1.above75Rate?.toFixed(1) ?? '—'}%، نسبة النجاح: ${s1.passRate?.toFixed(1) ?? '—'}%، عدد الطلاب: ${s1.count}.`)
+  if (s2?.mean != null) lines.push(`• الفصل الثاني (ف2): متوسط الدرجات ${s2.mean.toFixed(1)}/100، نسبة فوق 75%: ${s2.above75Rate?.toFixed(1) ?? '—'}%، نسبة النجاح: ${s2.passRate?.toFixed(1) ?? '—'}%، عدد الطلاب: ${s2.count}.`)
+  if (s3?.mean != null) lines.push(`• الفصل الثالث (ف3): متوسط الدرجات ${s3.mean.toFixed(1)}/100، نسبة فوق 75%: ${s3.above75Rate?.toFixed(1) ?? '—'}%، نسبة النجاح: ${s3.passRate?.toFixed(1) ?? '—'}%، عدد الطلاب: ${s3.count}.`)
+  if (s1?.mean != null && s2?.mean != null && s3?.mean != null) {
+    const d12 = round2(s2.mean - s1.mean), d23 = round2(s3.mean - s2.mean), d13 = round2(s3.mean - s1.mean)
+    lines.push(`• التغيرات: ف1→ف2: ${d12 >= 0 ? '+' : ''}${d12}، ف2→ف3: ${d23 >= 0 ? '+' : ''}${d23}، ف1→ف3: ${d13 >= 0 ? '+' : ''}${d13}.`)
+    lines.push(`• الاتجاه الإجمالي عبر العام: ${d13 >= 2 ? 'تحسّن ملحوظ' : d13 <= -2 ? 'تراجع ملحوظ' : 'استقرار نسبي'}.`)
+  }
+  return lines.join('\n')
 }
 
-type FGapItem = {subjectCode: string; avgFormative: number | null; avgExam: number | null; gap: number | null}
+type WithinSubjectRow = {subj: string; cells: ({mean: number; above75Rate: number} | null)[]}
+function genWithinSubjectDetailedNarrative(data: WithinSubjectRow[]): string {
+  if (data.length === 0) return ''
+  const lines: string[] = []
+  for (const row of data) {
+    const label = (SUBJECT_LABELS as Record<string, {ar: string; en: string}>)[row.subj]?.ar ?? row.subj
+    const [c1, c2, c3] = row.cells
+    if (!c1 && !c2 && !c3) continue
+    const parts = []
+    if (c1) parts.push(`ف1: ${c1.mean.toFixed(1)} (فوق75%: ${c1.above75Rate.toFixed(0)}%)`)
+    if (c2) {
+      const d = c1 ? round2(c2.mean - c1.mean) : null
+      parts.push(`ف2: ${c2.mean.toFixed(1)}${d != null ? (d >= 0 ? ' ▲+' : ' ▼') + Math.abs(d) : ''} (فوق75%: ${c2.above75Rate.toFixed(0)}%)`)
+    }
+    if (c3) {
+      const d = c2 ? round2(c3.mean - c2.mean) : null
+      parts.push(`ف3: ${c3.mean.toFixed(1)}${d != null ? (d >= 0 ? ' ▲+' : ' ▼') + Math.abs(d) : ''} (فوق75%: ${c3.above75Rate.toFixed(0)}%)`)
+    }
+    let summary = ''
+    if (c1 && c3) {
+      const total = round2(c3.mean - c1.mean)
+      summary = ` — ${total >= 2 ? 'تحسّن' : total <= -2 ? 'تراجع' : 'استقرار'} (${total >= 0 ? '+' : ''}${total})`
+    }
+    lines.push(`• ${label}: ${parts.join('، ')}${summary}.`)
+  }
+  return lines.join('\n')
+}
+
+type WithinGradeEntry = {sem: number; stats: {grade: number; mean: number; above75Rate: number}[]}
+function genWithinGradeDetailedNarrative(data: WithinGradeEntry[], grades: number[]): string {
+  if (data.length === 0 || grades.length === 0) return ''
+  const sem1 = data.find(d => d.sem === 1), sem2 = data.find(d => d.sem === 2), sem3 = data.find(d => d.sem === 3)
+  const lines: string[] = []
+  for (const grade of grades) {
+    const g1 = sem1?.stats.find(s => s.grade === grade)
+    const g2 = sem2?.stats.find(s => s.grade === grade)
+    const g3 = sem3?.stats.find(s => s.grade === grade)
+    if (!g1 && !g2 && !g3) continue
+    const parts = []
+    if (g1) parts.push(`ف1: ${g1.mean.toFixed(1)} (فوق75%: ${g1.above75Rate.toFixed(0)}%)`)
+    if (g2) {
+      const d = g1 ? round2(g2.mean - g1.mean) : null
+      parts.push(`ف2: ${g2.mean.toFixed(1)}${d != null ? (d >= 0 ? ' ▲+' : ' ▼') + Math.abs(d) : ''} (فوق75%: ${g2.above75Rate.toFixed(0)}%)`)
+    }
+    if (g3) {
+      const d = g2 ? round2(g3.mean - g2.mean) : null
+      parts.push(`ف3: ${g3.mean.toFixed(1)}${d != null ? (d >= 0 ? ' ▲+' : ' ▼') + Math.abs(d) : ''} (فوق75%: ${g3.above75Rate.toFixed(0)}%)`)
+    }
+    let summary = ''
+    if (g1 && g3) {
+      const total = round2(g3.mean - g1.mean)
+      summary = ` — ${total >= 2 ? 'تحسّن' : total <= -2 ? 'تراجع' : 'استقرار'} (${total >= 0 ? '+' : ''}${total})`
+    }
+    lines.push(`• الصف ${grade}: ${parts.join('، ')}${summary}.`)
+  }
+  return lines.join('\n')
+}
+
+type FGapItem = {subjectCode: string; avgFormative: number | null; avgExam: number | null; gap: number | null; studentsExamHigher?: number; studentsExamLower?: number}
 function genFormativeGapNarrative(gaps: FGapItem[], semLabel: string): string {
   if (gaps.length === 0) return ''
-  const neg = gaps.filter(g => g.gap != null && g.gap < -5)
-  const pos = gaps.filter(g => g.gap != null && g.gap > 5)
-  const aligned = gaps.filter(g => g.gap != null && Math.abs(g.gap) <= 5)
-  let text = `تحليل الفجوة (${semLabel}): `
-  if (neg.length > 0) {
-    const names = neg.map(g => (SUBJECT_LABELS as Record<string, {ar: string; en: string}>)[g.subjectCode]?.ar ?? g.subjectCode).join('، ')
-    text += `مواد سجّل فيها الاختبار أقل من التكويني: ${names} — يُوصى بمراجعة مستوى أسئلة الاختبار. `
+  const lines: string[] = [`تحليل تفصيلي للفجوة بين التقويم التكويني والاختبار (${semLabel}):`]
+  for (const g of gaps) {
+    if (g.avgFormative == null || g.avgExam == null) continue
+    const label = (SUBJECT_LABELS as Record<string, {ar: string; en: string}>)[g.subjectCode]?.ar ?? g.subjectCode
+    const gap = g.gap ?? 0
+    const gapDesc = gap > 10 ? 'فجوة كبيرة لصالح الاختبار'
+      : gap > 5 ? 'فجوة معتدلة لصالح الاختبار'
+      : gap < -10 ? 'فجوة كبيرة لصالح التكويني — يُوصى بمراجعة صعوبة الاختبار'
+      : gap < -5 ? 'فجوة معتدلة لصالح التكويني'
+      : 'انسجام جيد بين التكويني والاختبار'
+    let line = `• ${label}: تكويني ${g.avgFormative.toFixed(1)}/100، اختبار ${g.avgExam.toFixed(1)}/100، الفجوة ${gap >= 0 ? '+' : ''}${gap.toFixed(1)}% — ${gapDesc}.`
+    if (g.studentsExamHigher != null || g.studentsExamLower != null) {
+      line += ` (طلاب اختبارهم أعلى: ${g.studentsExamHigher ?? 0}، أقل: ${g.studentsExamLower ?? 0})`
+    }
+    lines.push(line)
   }
-  if (pos.length > 0) {
-    const names = pos.map(g => (SUBJECT_LABELS as Record<string, {ar: string; en: string}>)[g.subjectCode]?.ar ?? g.subjectCode).join('، ')
-    text += `مواد سجّل فيها الاختبار أعلى من التكويني: ${names} — قد يعكس تقويماً تكوينياً أكثر صرامة. `
+  const neg = gaps.filter(g => g.gap != null && g.gap < -5).length
+  const pos = gaps.filter(g => g.gap != null && g.gap > 5).length
+  const aligned = gaps.filter(g => g.gap != null && Math.abs(g.gap) <= 5).length
+  const summary = []
+  if (pos > 0) summary.push(`${pos} مادة اختبارها أعلى من تكوينيها`)
+  if (aligned > 0) summary.push(`${aligned} مادة في انسجام جيد`)
+  if (neg > 0) summary.push(`${neg} مادة اختبارها أقل من تكوينيها`)
+  lines.push(`\nملخص (${semLabel}): ${summary.join('، ')}.`)
+  return lines.join('\n')
+}
+
+type SemGapRow = {subjectCode: string; avgS1: number | null; avgS2: number | null; avgS3: number | null; gapS1S2: number | null; gapS2S3: number | null; gapS1S3: number | null; priority: string}
+type SchoolSemSummaryType = {avgS1: number; avgS2: number; avgS3: number; gapS1S2: number; gapS2S3: number; gapS1S3: number}
+function genSemGapDetailedNarrative(school: SchoolSemSummaryType, subjects: SemGapRow[]): string {
+  const pLabels: Record<string, string> = { critical: 'حرج', high: 'عالي', medium: 'متوسط', low: 'منخفض', ok: 'جيد' }
+  const lines: string[] = ['أ) على مستوى المدرسة:']
+  lines.push(`• الفصل الأول (ف1): متوسط ${school.avgS1.toFixed(1)}/100`)
+  lines.push(`• الفصل الثاني (ف2): متوسط ${school.avgS2.toFixed(1)}/100 — فجوة ف1→ف2: ${school.gapS1S2 >= 0 ? '+' : ''}${school.gapS1S2.toFixed(1)}%`)
+  lines.push(`• الفصل الثالث (ف3): متوسط ${school.avgS3.toFixed(1)}/100 — فجوة ف2→ف3: ${school.gapS2S3 >= 0 ? '+' : ''}${school.gapS2S3.toFixed(1)}%`)
+  lines.push(`• الفجوة الإجمالية ف1→ف3: ${school.gapS1S3 >= 0 ? '+' : ''}${school.gapS1S3.toFixed(1)}% — ${school.gapS1S3 >= 3 ? 'تحسّن ملحوظ' : school.gapS1S3 <= -3 ? 'تراجع ملحوظ' : 'استقرار نسبي'} عبر العام.`)
+  if (subjects.length > 0) {
+    lines.push(`\nب) على مستوى المواد:`)
+    for (const g of subjects) {
+      const label = (SUBJECT_LABELS as Record<string, {ar: string; en: string}>)[g.subjectCode]?.ar ?? g.subjectCode
+      const parts = []
+      if (g.avgS1 != null) parts.push(`ف1: ${g.avgS1.toFixed(1)}`)
+      if (g.avgS2 != null) parts.push(`ف2: ${g.avgS2.toFixed(1)} (${g.gapS1S2 != null ? (g.gapS1S2 >= 0 ? '+' : '') + g.gapS1S2.toFixed(1) + '%' : '—'})`)
+      if (g.avgS3 != null) parts.push(`ف3: ${g.avgS3.toFixed(1)} (${g.gapS2S3 != null ? (g.gapS2S3 >= 0 ? '+' : '') + g.gapS2S3.toFixed(1) + '%' : '—'})`)
+      const p = pLabels[g.priority] ?? g.priority
+      lines.push(`• ${label}: ${parts.join('، ')} — أولوية: ${p}.`)
+    }
   }
-  if (aligned.length > 0) text += `${aligned.length} مادة تظهر انسجاماً مناسباً بين التكويني والاختبار.`
-  return text
+  return lines.join('\n')
 }
 
 function ChartTitle({ children }: { children: React.ReactNode }) {
@@ -1041,6 +1139,14 @@ export default function PrintReport({ lang }: PrintReportProps) {
               </table>
             </div>
 
+            {/* Subject within-year detailed narrative */}
+            {withinSubjectData.length > 0 && (
+              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#f0fdf4', borderRight: '4px solid #16a34a', whiteSpace: 'pre-line' }}>
+                <p className="font-semibold text-xs text-gray-500 mb-2">📝 التحليل الوصفي — التقدم داخل العام على مستوى المواد</p>
+                <p>{genWithinSubjectDetailedNarrative(withinSubjectData)}</p>
+              </div>
+            )}
+
             {/* Grade within-year */}
             <SubLabel>ج) مستوى الصفوف — التقدم داخل العام حسب الصف</SubLabel>
             <TableTitle>جدول التقدم داخل العام — متوسط ونسبة ≥75% لكل صف</TableTitle>
@@ -1078,10 +1184,18 @@ export default function PrintReport({ lang }: PrintReportProps) {
               </table>
             </div>
 
-            {/* Within-year narrative */}
+            {/* Grade within-year detailed narrative */}
+            {withinGradeData.length > 0 && (
+              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#fefce8', borderRight: '4px solid #ca8a04', whiteSpace: 'pre-line' }}>
+                <p className="font-semibold text-xs text-gray-500 mb-2">📝 التحليل الوصفي — التقدم داخل العام على مستوى الصفوف</p>
+                <p>{genWithinGradeDetailedNarrative(withinGradeData, grades)}</p>
+              </div>
+            )}
+
+            {/* School within-year narrative */}
             {withinSchoolData.length > 0 && (
-              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#f0fdf4', borderRight: '4px solid #22c55e' }}>
-                <p className="font-semibold text-xs text-gray-500 mb-1">📝 التحليل الوصفي — التقدم داخل العام</p>
+              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#f0fdf4', borderRight: '4px solid #22c55e', whiteSpace: 'pre-line' }}>
+                <p className="font-semibold text-xs text-gray-500 mb-2">📝 التحليل الوصفي — التقدم داخل العام على مستوى المدرسة</p>
                 <p>{genWithinYearNarrative(withinSchoolData)}</p>
               </div>
             )}
@@ -1323,8 +1437,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
                   )
                 ))}
               {/* Formative gap S1 narrative */}
-              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: '4px solid #6366f1' }}>
-                <p className="font-semibold text-xs text-gray-500 mb-1">📝 التحليل الوصفي — التقويم التكويني مقابل الاختبار (ف1)</p>
+              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: '4px solid #6366f1', whiteSpace: 'pre-line' }}>
+                <p className="font-semibold text-xs text-gray-500 mb-2">📝 التحليل الوصفي — التقويم التكويني مقابل الاختبار (ف1)</p>
                 <p>{genFormativeGapNarrative(allFormativeGapsS1, 'الفصل الأول')}</p>
               </div>
               </>
@@ -1394,8 +1508,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
                 )
               ))}
               {/* Formative gap S3 narrative */}
-              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: '4px solid #6366f1' }}>
-                <p className="font-semibold text-xs text-gray-500 mb-1">📝 التحليل الوصفي — التقويم التكويني مقابل الاختبار (ف3)</p>
+              <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#eff6ff', borderRight: '4px solid #6366f1', whiteSpace: 'pre-line' }}>
+                <p className="font-semibold text-xs text-gray-500 mb-2">📝 التحليل الوصفي — التقويم التكويني مقابل الاختبار (ف3)</p>
                 <p>{genFormativeGapNarrative(allFormativeGapsS3, 'الفصل الثالث')}</p>
               </div>
             </SubSection>
@@ -1495,6 +1609,12 @@ export default function PrintReport({ lang }: PrintReportProps) {
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Semester gap detailed narrative */}
+                <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#f5f3ff', borderRight: '4px solid #7c3aed', whiteSpace: 'pre-line' }}>
+                  <p className="font-semibold text-xs text-gray-500 mb-2">📝 التحليل الوصفي — الفجوة بين الفصول الدراسية</p>
+                  <p>{genSemGapDetailedNarrative(schoolSemSummary, semGaps.filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode)))}</p>
                 </div>
 
                 <SubLabel>ج) الفجوة بين الفصول — مستوى الصف</SubLabel>
