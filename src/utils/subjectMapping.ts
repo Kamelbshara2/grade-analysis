@@ -86,12 +86,12 @@ export function getCycleSubjects(cycle: Cycle): SubjectCode[] {
 }
 
 // Returns true if a subject is relevant for a given grade.
-// Science (علوم) is for grade 10 عام and below (grades 5-10).
-// Specialized sciences (bio/chem/physics) are for grade 10 متقدم and above (grades 10-12).
-// Grade 10 intentionally allows both — track (عام vs متقدم) is determined by the actual data.
+// Science (علوم): grades 5-10 (عام track). Grade 9 عام and grade 10 عام also study science.
+// Specialized sciences (bio/chem/physics): grade 9 متقدم (physics+biology) and above.
+// Grades 9-10 intentionally allow both — the actual data determines which track applies.
 export function isSubjectRelevantForGrade(subject: SubjectCode, grade: number): boolean {
   if (subject === 'science') return grade <= 10
-  if (subject === 'biology' || subject === 'chemistry' || subject === 'physics') return grade >= 10
+  if (subject === 'biology' || subject === 'chemistry' || subject === 'physics') return grade >= 9
   return true
 }
 
