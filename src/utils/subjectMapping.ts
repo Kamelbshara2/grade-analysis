@@ -1,12 +1,14 @@
 import type { SubjectCode, Cycle } from '@/types'
 
 // Subject name patterns → canonical code
+// Patterns are flexible to handle common spelling/encoding variations in Excel exports.
 const SUBJECT_PATTERNS: Array<{ pattern: RegExp; code: SubjectCode }> = [
-  { pattern: /^الأحياء/, code: 'biology' },
-  { pattern: /^الفيزياء/, code: 'physics' },
-  { pattern: /^الكيمياء/, code: 'chemistry' },
-  { pattern: /^العلوم$/, code: 'science' },
-  { pattern: /^العلوم\s*$/, code: 'science' },
+  // Specialized sciences — match with or without ال, handle hamza variants (أ/ا)
+  { pattern: /[اأإ]حياء/, code: 'biology' },
+  { pattern: /فيزياء/, code: 'physics' },
+  { pattern: /كيمياء/, code: 'chemistry' },
+  // General science — exact word only (must not bleed into العلوم الصحية, handled below)
+  { pattern: /^ال?علوم\s*$/, code: 'science' },
   { pattern: /^التربية الإسلامية/, code: 'islamic' },
   { pattern: /^الدراسات الاجتماعية/, code: 'social' },
   { pattern: /^الرياضيات/, code: 'math' },
@@ -14,32 +16,32 @@ const SUBJECT_PATTERNS: Array<{ pattern: RegExp; code: SubjectCode }> = [
   { pattern: /^اللغة العربية/, code: 'arabic' },
 ]
 
-// Subjects to completely ignore
-const IGNORED_SUBJECTS = new Set([
+// Prefixes that mark a subject to ignore entirely.
+// Using startsWith(prefix) only — never the reverse — to avoid falsely ignoring
+// "العلوم" because "العلوم الصحية".startsWith("العلوم").
+const IGNORED_PREFIXES = [
   'العلوم الصحية',
-  'التربية البدنية والصحية',
-  'الحوسبة والتصميم الإبداعي والابتكار',
+  'التربية البدنية',
+  'الحوسبة',
+  'الذكاء الاصطناعي',
   'السلوك',
   'الفنون',
-  'الفنون البصرية',
-  'الفنون الموسيقية',
   'اللغة الصينية',
   'اللغة الفرنسية',
   'المسرح',
   'إدارة الأعمال',
-  'الذكاء الاصطناعي والتكنولوجيا',
   'الإجمالي',
   'المعدل',
   'الحالة',
-])
+]
 
 export function mapSubjectName(name: string): SubjectCode | null {
   if (!name) return null
   const trimmed = name.trim()
+  if (!trimmed) return null
 
-  // Check ignore list (prefix match)
-  for (const ignored of IGNORED_SUBJECTS) {
-    if (trimmed.startsWith(ignored) || ignored.startsWith(trimmed)) return null
+  for (const prefix of IGNORED_PREFIXES) {
+    if (trimmed.startsWith(prefix)) return null
   }
 
   for (const { pattern, code } of SUBJECT_PATTERNS) {
