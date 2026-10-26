@@ -371,7 +371,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       const pm = getPassMark(getCycle(grade))
       const sectionsData = sections.map(sec => {
         const secRecs = gradeRecs.filter(r => r.section === sec)
-        const subjectData = activeSubjects.map(subj => {
+        const subjectData = activeSubjects.filter(subj => isSubjectRelevantForGrade(subj, grade)).map(subj => {
           const scores = secRecs
             .map(r => r.grades[subj]?.annual)
             .filter((v): v is number => v !== null && v !== undefined)
@@ -406,7 +406,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
         : above75Rate >= 60 ? { ar: 'جيد جداً', level: 'very_good' }
         : above75Rate >= 50 ? { ar: 'جيد', level: 'good' }
         : { ar: 'مقبول', level: 'acceptable' }
-      return { grade, inds: inds.filter(ind => activeSubjects.includes(ind.subjectCode)), mean, above75Rate, passRate, gradeLevel, count: gradeRecs.length }
+      return { grade, inds: inds.filter(ind => activeSubjects.includes(ind.subjectCode) && isSubjectRelevantForGrade(ind.subjectCode, grade)), mean, above75Rate, passRate, gradeLevel, count: gradeRecs.length }
     })
   }, [grades, records, semesterVal, activeSubjects])
 
