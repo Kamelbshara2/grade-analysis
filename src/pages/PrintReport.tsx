@@ -352,7 +352,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
   const semesterVal = semester === 'annual' ? 'annual' : (Number(semester) as 1 | 2 | 3)
 
   // ── Standard 1.1 data ──
-  const indicators = useMemo(() => computeAchievementIndicators(records, semesterVal), [records, semesterVal])
+  const indicators = useMemo(() => computeAchievementIndicators(records, semesterVal).filter(ind => activeSubjects.includes(ind.subjectCode)), [records, semesterVal, activeSubjects])
 
   const subjectStats = useMemo(() => {
     const map: Record<string, ReturnType<typeof computeSubjectStats>> = {}
@@ -387,7 +387,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       })
       return { grade, sections: sectionsData }
     })
-  }, [grades, records])
+  }, [grades, records, activeSubjects])
 
   const gradeIndicators = useMemo(() => {
     return grades.map(grade => {
@@ -416,7 +416,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
     return { yearId: y, records: nationality ? filterRecords(recs, { nationality }) : recs }
   }), [years, nationality])
 
-  const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords), [allYearRecords])
+  const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords, activeSubjects as SubjectCode[]), [allYearRecords, activeSubjects])
 
   const withinSchoolData = useMemo(() => {
     return [1, 2, 3].map(sem => {
@@ -462,9 +462,9 @@ export default function PrintReport({ lang }: PrintReportProps) {
     })
   }, [records, activeSubjects])
 
-  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(records, sem as 1 | 2 | 3) })), [records])
+  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(records, sem as 1 | 2 | 3, activeSubjects as SubjectCode[]) })), [records, activeSubjects])
 
-  const progressRates = useMemo(() => computeProgressRates(allYearRecords), [allYearRecords])
+  const progressRates = useMemo(() => computeProgressRates(allYearRecords, activeSubjects as SubjectCode[]), [allYearRecords, activeSubjects])
 
   const schoolLevelProgress = useMemo(() => {
     const results = []
@@ -518,7 +518,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
   const semGaps = useMemo(() => computeSemesterGaps(records), [records])
 
   const schoolSemSummary = useMemo(() => {
-    const valid = semGaps.filter(g => g.gapS1S3 !== null)
+    const valid = semGaps.filter(g => activeSubjects.includes(g.subjectCode) && g.gapS1S3 !== null)
     if (valid.length === 0) return null
     const avgS1 = valid.reduce((a, b) => a + (b.avgS1 ?? 0), 0) / valid.length
     const avgS2 = valid.reduce((a, b) => a + (b.avgS2 ?? 0), 0) / valid.length
@@ -528,16 +528,16 @@ export default function PrintReport({ lang }: PrintReportProps) {
     const gapS2S3 = avgAnnual !== 0 ? round2((avgS3 - avgS2) / avgAnnual * 100) : 0
     const gapS1S3 = avgAnnual !== 0 ? round2((avgS3 - avgS1) / avgAnnual * 100) : 0
     return { avgS1, avgS2, avgS3, gapS1S2, gapS2S3, gapS1S3 }
-  }, [semGaps])
+  }, [semGaps, activeSubjects])
 
   // ── Term progress data ──
   const termRows = useMemo(() => {
-    const allCodes = [...new Set([
+    const allCodes = ([...new Set([
       ...diagScores.map(s => s.subjectCode),
       ...termScoresT1.map(s => s.subjectCode),
       ...termScoresT2.map(s => s.subjectCode),
       ...termScoresT3.map(s => s.subjectCode),
-    ])] as SubjectCode[]
+    ])] as SubjectCode[]).filter(code => activeSubjects.includes(code))
     if (allCodes.length === 0) return []
     const avg = (items: { subjectCode: SubjectCode; score: number | null }[], code: SubjectCode) => {
       const vals = items.filter(s => s.subjectCode === code && s.score !== null).map(s => s.score as number)
@@ -554,7 +554,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       t2: avg(termScoresT2, code),
       t3: avg(termScoresT3, code),
     })).filter(r => r.diagnostic !== null || r.t1 !== null)
-  }, [diagScores, termScoresT1, termScoresT2, termScoresT3])
+  }, [diagScores, termScoresT1, termScoresT2, termScoresT3, activeSubjects])
 
   // ── Overview stats ──
   const totals = useMemo(() => {

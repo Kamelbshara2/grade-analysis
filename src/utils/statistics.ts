@@ -764,7 +764,8 @@ function shortYear(yearId: string): string {
 }
 
 export function computeSchoolTrendPoints(
-  allYearRecords: { yearId: string; records: StudentRecord[] }[]
+  allYearRecords: { yearId: string; records: StudentRecord[] }[],
+  subjects: SubjectCode[] = ANALYSIS_SUBJECTS
 ): SemesterPoint[] {
   const points: SemesterPoint[] = []
   for (const { yearId, records } of allYearRecords) {
@@ -774,9 +775,10 @@ export function computeSchoolTrendPoints(
       const passMark = getPassMark(cycle)
       for (const r of records) {
         const scores: number[] = []
-        for (const subject of ANALYSIS_SUBJECTS) {
-          if (!isSubjectRelevantForGrade(subject, r.grade)) continue
-          const g = r.grades[subject]
+        for (const subject of subjects) {
+          const subjectCode = subject as SubjectCode
+          if (!isSubjectRelevantForGrade(subjectCode, r.grade)) continue
+          const g = r.grades[subjectCode]
           if (!g) continue
           const score = sem === 1 ? g.s1 : sem === 2 ? g.s2 : g.s3
           if (score !== null) scores.push(score)
@@ -860,14 +862,16 @@ export interface GradeStats {
 
 export function computeGradeStats(
   records: StudentRecord[],
-  semester: Semester | 'annual'
+  semester: Semester | 'annual',
+  subjects: SubjectCode[] = ANALYSIS_SUBJECTS
 ): GradeStats[] {
   const gradeMap = new Map<number, { avgs: number[]; cycle: Cycle }>()
   for (const r of records) {
     const scores: number[] = []
-    for (const subject of ANALYSIS_SUBJECTS) {
-      if (!isSubjectRelevantForGrade(subject, r.grade)) continue
-      const g = r.grades[subject]
+    for (const subject of subjects) {
+      const subjectCode = subject as SubjectCode
+      if (!isSubjectRelevantForGrade(subjectCode, r.grade)) continue
+      const g = r.grades[subjectCode]
       if (!g) continue
       let score: number | null = null
       if (semester === 1) score = g.s1
@@ -940,10 +944,12 @@ function classifyDiff(baseline: number, current: number, diff: number): 'improve
 }
 
 export function computeProgressRates(
-  allYearRecords: { yearId: string; records: StudentRecord[] }[]
+  allYearRecords: { yearId: string; records: StudentRecord[] }[],
+  subjects: SubjectCode[] = ANALYSIS_SUBJECTS
 ): SubjectProgressTrend[] {
-  return ANALYSIS_SUBJECTS.map(subject => {
-    const labels = SUBJECT_LABELS[subject] ?? { ar: subject, en: subject }
+  return subjects.map(subject => {
+    const subjectCode = subject as SubjectCode
+    const labels = SUBJECT_LABELS[subjectCode] ?? { ar: subject, en: subject }
 
     // Year-to-year transitions (annual score comparison for paired students)
     const transitions: SubjectProgressTrend['transitions'] = []
@@ -952,15 +958,15 @@ export function computeProgressRates(
       const curr = allYearRecords[i]
       const prevMap = new Map<string, number>()
       for (const r of prev.records) {
-        if (!isSubjectRelevantForGrade(subject, r.grade)) continue
-        const g = r.grades[subject]
+        if (!isSubjectRelevantForGrade(subjectCode, r.grade)) continue
+        const g = r.grades[subjectCode]
         if (g?.annual !== null && g?.annual !== undefined) prevMap.set(r.student.id, g.annual)
       }
       let improved = 0, regressed = 0, stable = 0
       const diffs: number[] = []
       for (const r of curr.records) {
-        if (!isSubjectRelevantForGrade(subject, r.grade)) continue
-        const g = r.grades[subject]
+        if (!isSubjectRelevantForGrade(subjectCode, r.grade)) continue
+        const g = r.grades[subjectCode]
         if (g?.annual === null || g?.annual === undefined) continue
         const prev = prevMap.get(r.student.id)
         if (prev === undefined) continue
@@ -992,8 +998,8 @@ export function computeProgressRates(
       const countSem = (fromKey: 's1' | 's2', toKey: 's2' | 's3') => {
         let imp = 0, reg = 0, sta = 0
         for (const r of latest.records) {
-          if (!isSubjectRelevantForGrade(subject, r.grade)) continue
-          const g = r.grades[subject]
+          if (!isSubjectRelevantForGrade(subjectCode, r.grade)) continue
+          const g = r.grades[subjectCode]
           if (!g) continue
           const from = g[fromKey], to = g[toKey]
           if (from === null || to === null) continue
@@ -1006,8 +1012,8 @@ export function computeProgressRates(
       }
       const s1s3Diffs: number[] = []
       for (const r of latest.records) {
-        if (!isSubjectRelevantForGrade(subject, r.grade)) continue
-        const g = r.grades[subject]
+        if (!isSubjectRelevantForGrade(subjectCode, r.grade)) continue
+        const g = r.grades[subjectCode]
         if (g?.s1 !== null && g?.s1 !== undefined && g?.s3 !== null && g?.s3 !== undefined)
           s1s3Diffs.push(g.s3 - g.s1)
       }
@@ -1020,7 +1026,7 @@ export function computeProgressRates(
       }
     }
 
-    return { subject, subjectNameAr: labels.ar, subjectNameEn: labels.en, transitions, withinYear }
+    return { subject: subjectCode, subjectNameAr: labels.ar, subjectNameEn: labels.en, transitions, withinYear }
   })
 }
 
