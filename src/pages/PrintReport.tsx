@@ -335,6 +335,8 @@ export default function PrintReport({ lang }: PrintReportProps) {
   const [semester, setSemester] = useState<'annual' | '1' | '2' | '3'>('annual')
   const [schoolName, setSchoolName] = useState('مدرسة خالد بن الوليد')
   const [nationality, setNationality] = useState<Nationality | undefined>(undefined)
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([...ANALYSIS_SUBJECTS])
+  const activeSubjects = useMemo(() => ANALYSIS_SUBJECTS.filter(s => selectedSubjects.includes(s)), [selectedSubjects])
 
   const records = useMemo(() => {
     const raw = dataStore.getRecordsByYear(yearId)
@@ -369,7 +371,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       const pm = getPassMark(getCycle(grade))
       const sectionsData = sections.map(sec => {
         const secRecs = gradeRecs.filter(r => r.section === sec)
-        const subjectData = ANALYSIS_SUBJECTS.map(subj => {
+        const subjectData = activeSubjects.map(subj => {
           const scores = secRecs
             .map(r => r.grades[subj]?.annual)
             .filter((v): v is number => v !== null && v !== undefined)
@@ -404,9 +406,9 @@ export default function PrintReport({ lang }: PrintReportProps) {
         : above75Rate >= 60 ? { ar: 'جيد جداً', level: 'very_good' }
         : above75Rate >= 50 ? { ar: 'جيد', level: 'good' }
         : { ar: 'مقبول', level: 'acceptable' }
-      return { grade, inds, mean, above75Rate, passRate, gradeLevel, count: gradeRecs.length }
+      return { grade, inds: inds.filter(ind => activeSubjects.includes(ind.subjectCode)), mean, above75Rate, passRate, gradeLevel, count: gradeRecs.length }
     })
-  }, [grades, records, semesterVal])
+  }, [grades, records, semesterVal, activeSubjects])
 
   // ── Standard 1.2 data ──
   const allYearRecords = useMemo(() => years.map(y => {
@@ -421,7 +423,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       const avgs: number[] = []
       for (const r of records) {
         const scores: number[] = []
-        for (const subj of ANALYSIS_SUBJECTS) {
+        for (const subj of activeSubjects) {
           if (!isSubjectRelevantForGrade(subj, r.grade)) continue
           const g = r.grades[subj]
           if (!g) continue
@@ -440,10 +442,10 @@ export default function PrintReport({ lang }: PrintReportProps) {
         count: avgs.length,
       }
     })
-  }, [records])
+  }, [records, activeSubjects])
 
   const withinSubjectData = useMemo(() => {
-    return ANALYSIS_SUBJECTS.map(subj => {
+    return activeSubjects.map(subj => {
       const cells = [1, 2, 3].map(sem => {
         const scores: number[] = []
         for (const r of records) {
@@ -458,7 +460,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
       })
       return { subj, cells }
     })
-  }, [records])
+  }, [records, activeSubjects])
 
   const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(records, sem as 1 | 2 | 3) })), [records])
 
@@ -490,7 +492,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
   }, [allYearRecords, years])
 
   const multiYearSubjectAvgs = useMemo(() => {
-    const allCodes = ANALYSIS_SUBJECTS.filter(code => allYearRecords.some(({ records: recs }) => recs.some(r => r.grades[code])))
+    const allCodes = activeSubjects.filter(code => allYearRecords.some(({ records: recs }) => recs.some(r => r.grades[code])))
     const subjectAvgs: Record<string, number[]> = {}
     const chartRows = allYearRecords.map(({ yearId: y, records: recs }) => {
       const row: Record<string, number | string> = { year: y }
@@ -504,14 +506,14 @@ export default function PrintReport({ lang }: PrintReportProps) {
       return row
     })
     return { chartRows, allCodes, subjectAvgs }
-  }, [allYearRecords])
+  }, [allYearRecords, activeSubjects])
 
   // ── Standard 1.3 data ──
-  const allFormativeGapsS1 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 1, undefined, records), [formativeScores, examScores, records])
-  const allFormativeGapsS3 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 3, undefined, records), [formativeScores, examScores, records])
+  const allFormativeGapsS1 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 1, undefined, records).filter(g => activeSubjects.includes(g.subjectCode)), [formativeScores, examScores, records, activeSubjects])
+  const allFormativeGapsS3 = useMemo(() => computeFormativeExamGaps(formativeScores, examScores, 3, undefined, records).filter(g => activeSubjects.includes(g.subjectCode)), [formativeScores, examScores, records, activeSubjects])
 
-  const gradeFormativeGapsS1 = useMemo(() => grades.map(grade => ({ grade, gaps: computeFormativeExamGaps(formativeScores, examScores, 1, grade, records) })), [formativeScores, examScores, grades, records])
-  const gradeFormativeGapsS3 = useMemo(() => grades.map(grade => ({ grade, gaps: computeFormativeExamGaps(formativeScores, examScores, 3, grade, records) })), [formativeScores, examScores, grades, records])
+  const gradeFormativeGapsS1 = useMemo(() => grades.map(grade => ({ grade, gaps: computeFormativeExamGaps(formativeScores, examScores, 1, grade, records).filter(g => activeSubjects.includes(g.subjectCode)) })), [formativeScores, examScores, grades, records, activeSubjects])
+  const gradeFormativeGapsS3 = useMemo(() => grades.map(grade => ({ grade, gaps: computeFormativeExamGaps(formativeScores, examScores, 3, grade, records).filter(g => activeSubjects.includes(g.subjectCode)) })), [formativeScores, examScores, grades, records, activeSubjects])
 
   const semGaps = useMemo(() => computeSemesterGaps(records), [records])
 
@@ -625,6 +627,23 @@ export default function PrintReport({ lang }: PrintReportProps) {
         <div>
           <label className="label">{ar ? 'اسم المدرسة' : 'School Name'}</label>
           <input className="input w-56" value={schoolName} onChange={e => setSchoolName(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">{ar ? 'المواد الدراسية' : 'Subjects'}</label>
+          <div className="flex flex-wrap gap-1 max-w-lg border rounded-lg p-2 bg-white">
+            <button
+              className={`text-xs px-2 py-0.5 rounded border transition-colors ${selectedSubjects.length === ANALYSIS_SUBJECTS.length ? 'bg-green-700 text-white border-green-700' : 'bg-white text-gray-600 border-gray-300 hover:border-green-600'}`}
+              onClick={() => setSelectedSubjects([...ANALYSIS_SUBJECTS])}>
+              {ar ? 'الكل' : 'All'}
+            </button>
+            {ANALYSIS_SUBJECTS.map(subj => (
+              <button key={subj}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors ${selectedSubjects.includes(subj) ? 'bg-green-700 text-white border-green-700' : 'bg-white text-gray-500 border-gray-300 hover:border-green-600'}`}
+                onClick={() => setSelectedSubjects(prev => prev.includes(subj) ? prev.filter(s => s !== subj) : [...prev, subj])}>
+                {(SUBJECT_LABELS as Record<string, {ar: string; en: string}>)[subj]?.ar ?? subj}
+              </button>
+            ))}
+          </div>
         </div>
         <button className="btn-primary flex items-center gap-2 self-end" onClick={() => window.print()}>
           <Printer size={15} />
@@ -1554,7 +1573,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                     <ChartTitle>مخطط متوسطات الفصول الدراسية حسب المادة (ف1 / ف2 / ف3)</ChartTitle>
                     <ResponsiveContainer width="100%" height={220}>
                       <BarChart
-                        data={semGaps.filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode)).map(g => ({
+                        data={semGaps.filter(g => activeSubjects.includes(g.subjectCode)).map(g => ({
                           name: subjectName(g.subjectCode),
                           s1: g.avgS1 ?? 0, s2: g.avgS2 ?? 0, s3: g.avgS3 ?? 0,
                         }))}
@@ -1589,7 +1608,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {semGaps.filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode)).map((g, i) => {
+                      {semGaps.filter(g => activeSubjects.includes(g.subjectCode)).map((g, i) => {
                         const pColors: Record<string, string> = { critical: 'text-red-700 bg-red-100', high: 'text-orange-700 bg-orange-100', medium: 'text-amber-700 bg-amber-100', low: 'text-yellow-700 bg-yellow-100', ok: 'text-green-700 bg-green-100' }
                         const pLabels: Record<string, string> = { critical: 'حرج', high: 'عالي', medium: 'متوسط', low: 'منخفض', ok: 'جيد' }
                         return (
@@ -1614,13 +1633,13 @@ export default function PrintReport({ lang }: PrintReportProps) {
                 {/* Semester gap detailed narrative */}
                 <div className="mt-4 p-4 rounded-xl text-sm text-gray-700 leading-7" style={{ background: '#f5f3ff', borderRight: '4px solid #7c3aed', whiteSpace: 'pre-line' }}>
                   <p className="font-semibold text-xs text-gray-500 mb-2">📝 التحليل الوصفي — الفجوة بين الفصول الدراسية</p>
-                  <p>{genSemGapDetailedNarrative(schoolSemSummary, semGaps.filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode)))}</p>
+                  <p>{genSemGapDetailedNarrative(schoolSemSummary, semGaps.filter(g => activeSubjects.includes(g.subjectCode)))}</p>
                 </div>
 
                 <SubLabel>ج) الفجوة بين الفصول — مستوى الصف</SubLabel>
                 {grades.map(grade => {
                   const gradeRecs = records.filter(r => r.grade === grade)
-                  const gradeGaps = computeSemesterGaps(gradeRecs).filter(g => ANALYSIS_SUBJECTS.includes(g.subjectCode))
+                  const gradeGaps = computeSemesterGaps(gradeRecs).filter(g => activeSubjects.includes(g.subjectCode))
                   if (gradeGaps.length === 0) return null
                   return (
                     <div key={grade} className="mb-3 p-3 border rounded-lg">
