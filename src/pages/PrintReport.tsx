@@ -416,7 +416,7 @@ export default function PrintReport({ lang }: PrintReportProps) {
     return { yearId: y, records: nationality ? filterRecords(recs, { nationality }) : recs }
   }), [years, nationality])
 
-  const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords), [allYearRecords])
+  const schoolTrend = useMemo(() => computeSchoolTrendPoints(allYearRecords, activeSubjects as SubjectCode[]), [allYearRecords, activeSubjects])
 
   const withinSchoolData = useMemo(() => {
     return [1, 2, 3].map(sem => {
@@ -462,9 +462,9 @@ export default function PrintReport({ lang }: PrintReportProps) {
     })
   }, [records, activeSubjects])
 
-  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(records, sem as 1 | 2 | 3) })), [records])
+  const withinGradeData = useMemo(() => [1, 2, 3].map(sem => ({ sem, stats: computeGradeStats(records, sem as 1 | 2 | 3, activeSubjects as SubjectCode[]) })), [records, activeSubjects])
 
-  const progressRates = useMemo(() => computeProgressRates(allYearRecords), [allYearRecords])
+  const progressRates = useMemo(() => computeProgressRates(allYearRecords, activeSubjects as SubjectCode[]), [allYearRecords, activeSubjects])
 
   const schoolLevelProgress = useMemo(() => {
     const results = []
