@@ -15,6 +15,8 @@ export function filterRecords(
     if (filter.section && r.section !== filter.section) return false
     if (filter.track && r.track !== filter.track) return false
     if (filter.nationality && filter.nationality !== 'unknown' && r.student.nationality !== filter.nationality) return false
+    if (filter.sourceSchool === 'main' && r.sourceSchool) return false
+    if (filter.sourceSchool && filter.sourceSchool !== 'main' && r.sourceSchool !== filter.sourceSchool) return false
     return true
   })
 }

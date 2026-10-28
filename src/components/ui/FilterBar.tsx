@@ -12,6 +12,7 @@ interface FilterBarProps {
   showSemester?: boolean
   showNationality?: boolean
   showTrack?: boolean  // kept for backward compat; track is always shown when grade is selected
+  showSourceSchool?: boolean
 }
 
 const SEMESTERS: { value: Semester | 'annual'; labelKey: 'sem_1' | 'sem_2' | 'sem_3' | 'sem_annual' }[] = [
@@ -25,12 +26,14 @@ export default function FilterBar({
   filter, onChange, lang,
   showSubject = true, showSemester = true,
   showNationality = false, showTrack = false,
+  showSourceSchool = false,
 }: FilterBarProps) {
   const years = dataStore.getYears()
   const grades = filter.yearId ? dataStore.getUniqueGrades(filter.yearId) : dataStore.getUniqueGrades()
   const sections = filter.yearId
     ? dataStore.getUniqueSections(filter.yearId, filter.grade, filter.track)
     : dataStore.getUniqueSections(undefined, filter.grade, filter.track)
+  const externalSchools = dataStore.getSourceSchools(filter.yearId)
 
   const subjects = Object.entries(SUBJECT_LABELS) as [SubjectCode, { ar: string; en: string }][]
 
@@ -97,6 +100,18 @@ export default function FilterBar({
           <select className="input" value={filter.semester ?? ''} onChange={e => set({ semester: e.target.value as Semester | 'annual' | undefined || undefined })}>
             <option value="">{t('all')}</option>
             {SEMESTERS.map(s => <option key={s.value} value={s.value}>{t(s.labelKey)}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* Source School */}
+      {showSourceSchool && externalSchools.length > 0 && (
+        <div className="min-w-[160px]">
+          <label className="label">{lang === 'ar' ? 'مصدر البيانات' : 'Data Source'}</label>
+          <select className="input" value={filter.sourceSchool || ''} onChange={e => set({ sourceSchool: e.target.value || undefined })}>
+            <option value="">{lang === 'ar' ? 'الكل' : 'All'}</option>
+            <option value="main">{lang === 'ar' ? 'خالد بن الوليد' : 'Khaled bin Al Waleed'}</option>
+            {externalSchools.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
       )}

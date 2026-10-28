@@ -176,6 +176,34 @@ export const dataStore = {
     }).catch(e => console.warn('Neon sync students failed:', e))
   },
 
+  importExternalRecords(yearId: string, records: StudentRecord[]): void {
+    if (!_data.years[yearId]) {
+      _data.years[yearId] = { yearId, records, diagnosticScores: [], formativeScores: [], examScores: [], termScores: [], uploadedAt: new Date().toISOString() }
+    } else {
+      // Remove existing records with same studentId+sourceSchool combination, then append
+      const schoolName = records[0]?.sourceSchool
+      const existing = _data.years[yearId].records.filter(r => r.sourceSchool !== schoolName)
+      _data.years[yearId].records = [...existing, ...records]
+    }
+    saveData(_data)
+    fetch('/api/students', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearId, records }),
+    }).catch(e => console.warn('Neon sync students failed:', e))
+  },
+
+  getSourceSchools(yearId?: string): string[] {
+    const years = yearId ? [yearId] : Object.keys(_data.years)
+    const schools = new Set<string>()
+    for (const yr of years) {
+      for (const r of (_data.years[yr]?.records || [])) {
+        if (r.sourceSchool) schools.add(r.sourceSchool)
+      }
+    }
+    return Array.from(schools).sort()
+  },
+
   importDiagnosticScores(yearId: string, scores: DiagnosticScore[]): void {
     if (!_data.years[yearId]) {
       _data.years[yearId] = { yearId, records: [], diagnosticScores: scores, formativeScores: [], examScores: [], termScores: [], uploadedAt: new Date().toISOString() }

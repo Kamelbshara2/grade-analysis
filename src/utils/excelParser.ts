@@ -197,6 +197,7 @@ function bestScore(a: number | null, b: number | null): number | null {
 
 // ── Grade name → number map (Ministry NOOR student roster format) ─────────────
 const GRADE_NAME_MAP: Record<string, number> = {
+  'الصف الرابع': 4,
   'الصف الخامس': 5,
   'الصف السادس': 6,
   'الصف السابع': 7,
@@ -299,6 +300,173 @@ export function parseStudentRosterFile(
   }
 
   return { records, errors }
+}
+
+/**
+ * Parse the partial external school file format.
+ * Row index 0: title (skip)
+ * Row index 1: headers — A=رقم الطالب, B=الاسم بالعربية, C=الاسم بالانجليزية,
+ *              D=الجنسية (country name), E=emarati/expat flag,
+ *              F=الشعبة (section), G=المسار (track), H=grade number,
+ *              I=classroom string (e.g. "4-1"), J=year label,
+ *              K=اللغة العربية, L=اللغة الانجليزية, M=الرياضيات, N=العلوم
+ * Row index 2+: data
+ * Annual grades only — s1/s2/s3 are null.
+ */
+export function parsePartialSchoolFile(
+  buffer: ArrayBuffer,
+  yearId: string,
+  schoolName: string,
+): { records: StudentRecord[]; errors: string[] } {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+  }) as (string | number | null)[][]
+
+  const errors: string[] = []
+  const records: StudentRecord[] = []
+
+  if (raw.length < 3) {
+    errors.push('الملف فارغ أو غير صحيح')
+    return { records, errors }
+  }
+
+  // Find header row containing 'رقم الطالب'
+  let headerIdx = -1
+  for (let i = 0; i < Math.min(5, raw.length); i++) {
+    if (raw[i].some(c => String(c ?? '').trim() === 'رقم الطالب')) {
+      headerIdx = i
+      break
+    }
+  }
+  if (headerIdx === -1) {
+    errors.push('لم يتم العثور على صف العناوين (رقم الطالب)')
+    return { records, errors }
+  }
+
+  const headerRow = raw[headerIdx]
+
+  // Detect column indices dynamically
+  let idCol = 0, nameCol = 1, natFlagCol = 4, sectionCol = 5, trackCol = 6
+  let gradeNumCol = 7, arabicCol = -1, englishCol = -1, mathCol = -1, scienceCol = -1
+
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = String(headerRow[c] ?? '').trim()
+    if (h === 'رقم الطالب') idCol = c
+    else if (h === 'الاسم بالعربية') nameCol = c
+    else if (h === 'emarati' || h === 'expat' || h === 'إماراتي') natFlagCol = c
+    else if (h === 'الشعبة') sectionCol = c
+    else if (h === 'المسار') trackCol = c
+    else if (/^grade$|^الصف$|^درجة$/i.test(h) || h.match(/^\d+$/) !== null) {
+      // grade column is usually a number header — detect by position or name
+    }
+    else if (h === 'اللغة العربية' || h === 'عربي') arabicCol = c
+    else if (h === 'اللغة الانجليزية' || h === 'اللغة الإنجليزية' || h === 'إنجليزي') englishCol = c
+    else if (h === 'الرياضيات' || h === 'رياضيات') mathCol = c
+    else if (h === 'العلوم' || h === 'علوم') scienceCol = c
+  }
+
+  // gradeNumCol: try col 7 (H) or look for column with numeric header like "8" or "9"
+  // Also try detecting from header name
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = String(headerRow[c] ?? '').trim()
+    if (/^(grade|الصف الدراسي)$/i.test(h) || h === 'الصف') {
+      gradeNumCol = c
+    }
+  }
+  // Fallback: col 7 if specific column not found
+  if (gradeNumCol === 7 && arabicCol > 0) {
+    // Use the column just before arabic if it looks like it has grade numbers
+  }
+
+  const subjectCols: { code: SubjectCode; col: number }[] = []
+  if (arabicCol >= 0) subjectCols.push({ code: 'arabic', col: arabicCol })
+  if (englishCol >= 0) subjectCols.push({ code: 'english', col: englishCol })
+  if (mathCol >= 0) subjectCols.push({ code: 'math', col: mathCol })
+  if (scienceCol >= 0) subjectCols.push({ code: 'science', col: scienceCol })
+
+  if (subjectCols.length === 0) {
+    errors.push('لم يتم العثور على أعمدة المواد (عربي، إنجليزي، رياضيات، علوم)')
+    return { records, errors }
+  }
+
+  for (let r = headerIdx + 1; r < raw.length; r++) {
+    const row = raw[r]
+    if (!row) continue
+
+    const studentId = String(row[idCol] ?? '').trim()
+    if (!studentId || studentId === 'رقم الطالب') continue
+
+    const name = String(row[nameCol] ?? '').trim()
+
+    const natFlag = String(row[natFlagCol] ?? '').trim().toLowerCase()
+    const nationality: Nationality = natFlag === 'emarati' ? 'citizen'
+      : natFlag === 'expat' ? 'expat' : 'unknown'
+
+    // Grade: try gradeNumCol (col 7 = H)
+    const gradeRaw = row[gradeNumCol]
+    const grade = gradeRaw !== null && gradeRaw !== '' ? parseInt(String(gradeRaw), 10) : 0
+    if (!grade || isNaN(grade)) {
+      errors.push(`صف غير معروف للطالب ${studentId}`)
+      continue
+    }
+
+    const trackRaw = String(row[trackCol] ?? '').trim()
+    const track: Track = trackRaw === 'متقدم' ? 'advanced' : 'general'
+
+    // Section: try sectionCol, or parse from classroom string (col 8 = "4-1" → "1")
+    let section = String(row[sectionCol] ?? '').trim()
+    if (!section || section === 'null') {
+      // Try classroom col (I = index 8): "4-1" → section "1"
+      const classroom = String(row[8] ?? '').trim()
+      const m = classroom.match(/-(\d+)$/)
+      section = m ? m[1] : '1'
+    }
+
+    const cycle: Cycle = getCycle(grade)
+
+    const grades: Partial<Record<SubjectCode, SubjectGrade>> = {}
+    for (const { code, col } of subjectCols) {
+      const annual = parsePartialScore(row[col])
+      if (annual !== null) {
+        grades[code] = { s1: null, s2: null, s3: null, annual }
+      }
+    }
+
+    // Determine pass/fail from annual grades (pass if all non-null grades >= pass mark)
+    const passMark = getPassMark(cycle)
+    const gradeVals = Object.values(grades).map(g => g?.annual).filter(v => v !== null) as number[]
+    const status: 'pass' | 'fail' | 'unknown' = gradeVals.length === 0
+      ? 'unknown'
+      : gradeVals.every(v => v >= passMark) ? 'pass' : 'fail'
+
+    records.push({
+      student: { id: studentId, name, nationality },
+      yearId,
+      grade,
+      track,
+      section,
+      sectionRaw: `${grade}/${section}`,
+      cycle,
+      grades,
+      annualAvg: gradeVals.length > 0 ? gradeVals.reduce((a, b) => a + b, 0) / gradeVals.length : null,
+      annualTotal: null,
+      status,
+      sourceSchool: schoolName,
+    })
+  }
+
+  return { records, errors }
+}
+
+function parsePartialScore(val: unknown): number | null {
+  if (val === null || val === undefined || val === '') return null
+  const n = typeof val === 'number' ? val : parseFloat(String(val))
+  if (isNaN(n)) return null
+  return n > 0 ? n : null
 }
 
 // Parse a nationality CSV: student_id,nationality (citizen/expat)

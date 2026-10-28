@@ -98,7 +98,7 @@ export default function Progress({ lang }: ProgressProps) {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">{t('progress_title')}</h1>
 
-      <FilterBar filter={filter} onChange={f => setFilter({ ...f, semester: filter.semester })} lang={lang} showSubject showSemester showNationality showTrack />
+      <FilterBar filter={filter} onChange={f => setFilter({ ...f, semester: filter.semester })} lang={lang} showSubject showSemester showNationality showTrack showSourceSchool />
 
       {/* Options */}
       <div className="flex flex-wrap gap-4 items-center">

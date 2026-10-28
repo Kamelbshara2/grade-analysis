@@ -33,7 +33,7 @@ export interface SubjectGrade {
 export interface StudentRecord {
   student: Student;
   yearId: string;       // e.g. '2023-2024'
-  grade: number;        // 5-12
+  grade: number;        // 4-12
   track: Track;
   section: string;      // section number e.g. '1'
   sectionRaw: string;   // original section string
@@ -42,6 +42,7 @@ export interface StudentRecord {
   annualAvg: number | null;
   annualTotal: number | null;
   status: 'pass' | 'fail' | 'unknown';
+  sourceSchool?: string; // undefined = خالد بن الوليد (main school)
 }
 
 // ===== DIAGNOSTIC TEST =====
@@ -121,6 +122,7 @@ export interface AnalysisFilter {
   track?: Track;
   nationality?: Nationality;
   baselineMode?: 'previous' | 'diagnostic';
+  sourceSchool?: string; // undefined = all schools, 'main' = خالد بن الوليد only, or external school name
 }
 
 // ===== UPLOAD =====
