@@ -466,6 +466,14 @@ export default function PrintReport({ lang }: PrintReportProps) {
 
   const progressRates = useMemo(() => computeProgressRates(allYearRecords, activeSubjects as SubjectCode[]), [allYearRecords, activeSubjects])
 
+  const progressRatesByGrade = useMemo(() => grades.map(grade => ({
+    grade,
+    rates: computeProgressRates(
+      allYearRecords.map(yr => ({ ...yr, records: yr.records.filter(r => r.grade === grade) })),
+      activeSubjects as SubjectCode[]
+    ),
+  })), [allYearRecords, grades, activeSubjects])
+
   const schoolLevelProgress = useMemo(() => {
     const results = []
     for (let i = 0; i < years.length - 1; i++) {
@@ -846,16 +854,19 @@ export default function PrintReport({ lang }: PrintReportProps) {
               </table>
             </div>
             <div className="mt-4 space-y-2">
-              <TableTitle>التحليل الرقمي والوصفي لكل مادة</TableTitle>
-              {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(ind => (
-                <div key={ind.subjectCode} className="p-3 rounded-lg text-xs text-gray-700 leading-6"
-                  style={{ background: levelColor(ind.level) + '0d', borderRight: `3px solid ${levelColor(ind.level)}` }}>
-                  <span className={clsx('inline-block px-2 py-0.5 rounded border text-xs font-bold me-2', levelBg(ind.level))}>
-                    {SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode}
-                  </span>
-                  {genNarrativeSubject(ind, subjectStats[ind.subjectCode])}
-                </div>
-              ))}
+              <TableTitle>التحليل الوصفي لكل مادة — مستوى المدرسة</TableTitle>
+              {[...indicators].sort((a, b) => b.above75Rate - a.above75Rate).map(ind => {
+                const name = SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode
+                return (
+                  <div key={ind.subjectCode} className="p-3 rounded-lg text-xs text-gray-700 leading-6"
+                    style={{ background: levelColor(ind.level) + '0d', borderRight: `3px solid ${levelColor(ind.level)}` }}>
+                    <div className="font-bold mb-1">المادة: {name} &nbsp; الحكم: {ind.levelAr}</div>
+                    <div>
+                      حصل نسبة ({round2(ind.passRate)}%) من الطلاب على درجة النجاح وحصل نسبة ({ind.above75Rate}%) من الطلاب على درجات تفوق 75 وبالتالي فإن الحكم على المادة على مستوى المدرسة ({ind.above75Rate}%) هو {ind.levelAr}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </SubSection>
 
@@ -930,12 +941,18 @@ export default function PrintReport({ lang }: PrintReportProps) {
 
                 {/* Per-subject descriptive narrative */}
                 <div className="mt-3 space-y-1.5">
-                  {gi.inds.sort((a, b) => b.above75Rate - a.above75Rate).map(ind => (
-                    <p key={ind.subjectCode} className="text-xs text-gray-700 leading-6 px-3 py-1.5 rounded"
-                      style={{ background: levelColor(ind.level) + '12', borderRight: `3px solid ${levelColor(ind.level)}` }}>
-                      {genGradeSubjectNarrative(ind, subjectStats[ind.subjectCode], gi.grade)}
-                    </p>
-                  ))}
+                  {gi.inds.sort((a, b) => b.above75Rate - a.above75Rate).map(ind => {
+                    const name = SUBJECT_LABELS[ind.subjectCode]?.ar ?? ind.subjectCode
+                    return (
+                      <div key={ind.subjectCode} className="px-3 py-1.5 rounded text-xs text-gray-700 leading-6"
+                        style={{ background: levelColor(ind.level) + '12', borderRight: `3px solid ${levelColor(ind.level)}` }}>
+                        <div className="font-bold mb-0.5">المادة: {name} &nbsp; الحكم: {ind.levelAr} &nbsp; الصف: {gi.grade}</div>
+                        <div>
+                          حصل نسبة ({round2(ind.passRate)}%) من الطلاب على درجة النجاح في الصف {gi.grade} وحصل نسبة ({ind.above75Rate}%) من الطلاب على درجات تفوق 75 وبالتالي فإن الحكم على المادة على مستوى الصف {gi.grade} هو {ind.levelAr}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 {/* Section charts: pass rate & above 75% per subject per section */}
@@ -1295,6 +1312,24 @@ export default function PrintReport({ lang }: PrintReportProps) {
                           </tbody>
                         </table>
                       </div>
+                      {/* Per-subject school-level 1.2 narrative */}
+                      <div className="mt-3 space-y-1.5">
+                        {progressRates.map(sp => {
+                          const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
+                          if (!tr || tr.total === 0) return null
+                          const trend = tr.improvedPct > tr.regressedPct ? 'تحسن' : tr.regressedPct > tr.improvedPct ? 'تراجع' : 'استقرار'
+                          return (
+                            <div key={sp.subject} className="px-3 py-1.5 rounded text-xs text-gray-700 leading-6"
+                              style={{ background: tr.improvedPct >= tr.regressedPct ? '#f0fdf4' : '#fef2f2', borderRight: `3px solid ${tr.improvedPct >= tr.regressedPct ? '#22c55e' : '#ef4444'}` }}>
+                              <span className="font-bold">المادة: {sp.subjectNameAr}</span>
+                              <span className="mx-2">—</span>
+                              <span>
+                                حصل نسبة ({tr.improvedPct}%) من الطلاب على تقدم في درجاتهم بين عامَي {t.yearFrom} و{t.yearTo} وتراجع نسبة ({tr.regressedPct}%) وبالتالي فإن الاتجاه العام لهذه المادة على مستوى المدرسة هو {trend}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )
                 })}
@@ -1365,6 +1400,50 @@ export default function PrintReport({ lang }: PrintReportProps) {
               </>
             )}
           </SubSection>
+
+          {/* Grade-level 1.2 progress/regression narratives */}
+          {progressRatesByGrade.some(g => g.rates.some(sp => sp.transitions.length > 0)) && (
+            <SubSection title="الجزء 4 — نسب التقدم والتراجع حسب الصف">
+              {progressRatesByGrade.map(({ grade, rates }) => {
+                const hasData = rates.some(sp => sp.transitions.some(t => t.total > 0))
+                if (!hasData) return null
+                const transitions = rates[0]?.transitions ?? []
+                return (
+                  <div key={grade} className="mb-6">
+                    <p className="text-xs font-semibold mb-2" style={{ color: C.primary }}>الصف {grade}</p>
+                    {transitions.map(t => {
+                      const subjectsWithData = rates.filter(sp => {
+                        const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)
+                        return tr && tr.total > 0
+                      })
+                      if (subjectsWithData.length === 0) return null
+                      return (
+                        <div key={t.yearFrom} className="mb-3">
+                          <p className="text-[11px] text-gray-500 mb-1.5 font-medium">{t.yearFrom} → {t.yearTo}</p>
+                          <div className="space-y-1.5">
+                            {subjectsWithData.map(sp => {
+                              const tr = sp.transitions.find(x => x.yearFrom === t.yearFrom && x.yearTo === t.yearTo)!
+                              const trend = tr.improvedPct > tr.regressedPct ? 'تحسن' : tr.regressedPct > tr.improvedPct ? 'تراجع' : 'استقرار'
+                              return (
+                                <div key={sp.subject} className="px-3 py-1.5 rounded text-xs text-gray-700 leading-6"
+                                  style={{ background: tr.improvedPct >= tr.regressedPct ? '#f0fdf4' : '#fef2f2', borderRight: `3px solid ${tr.improvedPct >= tr.regressedPct ? '#22c55e' : '#ef4444'}` }}>
+                                  <span className="font-bold">المادة: {sp.subjectNameAr}</span>
+                                  <span className="mx-2">—</span>
+                                  <span>
+                                    حصل نسبة ({tr.improvedPct}%) من الطلاب على تقدم في درجاتهم في الصف {grade} بين عامَي {t.yearFrom} و{t.yearTo} وتراجع نسبة ({tr.regressedPct}%) وبالتالي فإن الاتجاه العام لهذه المادة على مستوى الصف {grade} هو {trend}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </SubSection>
+          )}
         </Section>
 
         <div className="print-break" />
