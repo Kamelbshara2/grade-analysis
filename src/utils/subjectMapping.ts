@@ -1,12 +1,14 @@
 import type { SubjectCode, Cycle } from '@/types'
 
 // Subject name patterns → canonical code
+// Patterns are flexible to handle common spelling/encoding variations in Excel exports.
 const SUBJECT_PATTERNS: Array<{ pattern: RegExp; code: SubjectCode }> = [
-  { pattern: /^الأحياء/, code: 'biology' },
-  { pattern: /^الفيزياء/, code: 'physics' },
-  { pattern: /^الكيمياء/, code: 'chemistry' },
-  { pattern: /^العلوم$/, code: 'science' },
-  { pattern: /^العلوم\s*$/, code: 'science' },
+  // Specialized sciences — match with or without ال, handle hamza variants (أ/ا)
+  { pattern: /[اأإ]حياء/, code: 'biology' },
+  { pattern: /فيزياء/, code: 'physics' },
+  { pattern: /كيمياء/, code: 'chemistry' },
+  // General science — exact word only (must not bleed into العلوم الصحية, handled below)
+  { pattern: /^ال?علوم\s*$/, code: 'science' },
   { pattern: /^التربية الإسلامية/, code: 'islamic' },
   { pattern: /^الدراسات الاجتماعية/, code: 'social' },
   { pattern: /^الرياضيات/, code: 'math' },
@@ -14,32 +16,32 @@ const SUBJECT_PATTERNS: Array<{ pattern: RegExp; code: SubjectCode }> = [
   { pattern: /^اللغة العربية/, code: 'arabic' },
 ]
 
-// Subjects to completely ignore
-const IGNORED_SUBJECTS = new Set([
+// Prefixes that mark a subject to ignore entirely.
+// Using startsWith(prefix) only — never the reverse — to avoid falsely ignoring
+// "العلوم" because "العلوم الصحية".startsWith("العلوم").
+const IGNORED_PREFIXES = [
   'العلوم الصحية',
-  'التربية البدنية والصحية',
-  'الحوسبة والتصميم الإبداعي والابتكار',
+  'التربية البدنية',
+  'الحوسبة',
+  'الذكاء الاصطناعي',
   'السلوك',
   'الفنون',
-  'الفنون البصرية',
-  'الفنون الموسيقية',
   'اللغة الصينية',
   'اللغة الفرنسية',
   'المسرح',
   'إدارة الأعمال',
-  'الذكاء الاصطناعي والتكنولوجيا',
   'الإجمالي',
   'المعدل',
   'الحالة',
-])
+]
 
 export function mapSubjectName(name: string): SubjectCode | null {
   if (!name) return null
   const trimmed = name.trim()
+  if (!trimmed) return null
 
-  // Check ignore list (prefix match)
-  for (const ignored of IGNORED_SUBJECTS) {
-    if (trimmed.startsWith(ignored) || ignored.startsWith(trimmed)) return null
+  for (const prefix of IGNORED_PREFIXES) {
+    if (trimmed.startsWith(prefix)) return null
   }
 
   for (const { pattern, code } of SUBJECT_PATTERNS) {
@@ -85,9 +87,12 @@ export function getCycleSubjects(cycle: Cycle): SubjectCode[] {
   return cycle === 2 ? CYCLE2_SUBJECTS : CYCLE3_SUBJECTS
 }
 
-// Returns true if a subject is relevant for a given grade
+// Returns true if a subject is relevant for a given grade.
+// Science (علوم): grades 5-10 (عام track). Grade 9 عام and grade 10 عام also study science.
+// Specialized sciences (bio/chem/physics): grade 9 متقدم (physics+biology) and above.
+// Grades 9-10 intentionally allow both — the actual data determines which track applies.
 export function isSubjectRelevantForGrade(subject: SubjectCode, grade: number): boolean {
-  if (subject === 'science') return grade <= 10   // grades 5-8, 9-10 general
+  if (subject === 'science') return grade <= 10
   if (subject === 'biology' || subject === 'chemistry' || subject === 'physics') return grade >= 9
   return true
 }
