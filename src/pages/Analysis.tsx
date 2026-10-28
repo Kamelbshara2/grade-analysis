@@ -66,6 +66,7 @@ export default function Analysis({ lang }: AnalysisProps) {
         showSemester
         showNationality
         showTrack
+        showSourceSchool
       />
 
       <p className="text-sm text-gray-500">

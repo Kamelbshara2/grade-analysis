@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { Upload as UploadIcon, CheckCircle, AlertCircle, FileSpreadsheet, Download } from 'lucide-react'
 import { t } from '@/i18n/translations'
 import type { Language } from '@/types'
-import { parseAnnualGradeFile, parseNationalityFile, parseStudentRosterFile } from '@/utils/excelParser'
+import { parseAnnualGradeFile, parseNationalityFile, parseStudentRosterFile, parsePartialSchoolFile } from '@/utils/excelParser'
 import { parseDiagnosticFile } from '@/utils/diagnosticParser'
 import { parseFormativeFile, parseExamFile } from '@/utils/formativeParser'
 import { parseTermFile, parseNoorTermFile, isNoorTermFile, parseNoorFormativeExam } from '@/utils/termParser'
@@ -14,7 +14,7 @@ interface UploadProps {
   lang: Language
 }
 
-type UploadMode = 'annual' | 'diagnostic' | 'nationality' | 'formative' | 'exam' | 'term' | 'roster'
+type UploadMode = 'annual' | 'diagnostic' | 'nationality' | 'formative' | 'exam' | 'term' | 'roster' | 'partial'
 
 interface UploadState {
   status: 'idle' | 'processing' | 'success' | 'error'
@@ -26,10 +26,15 @@ export default function Upload({ lang }: UploadProps) {
   const [mode, setMode] = useState<UploadMode>('annual')
   const [yearId, setYearId] = useState('')
   const [termSemester, setTermSemester] = useState<1 | 2 | 3>(1)
+  const [partialSchoolName, setPartialSchoolName] = useState('')
   const [state, setState] = useState<UploadState>({ status: 'idle' })
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
+    if (mode === 'partial' && !partialSchoolName.trim()) {
+      setState({ status: 'error', error: lang === 'ar' ? 'يرجى إدخال اسم المدرسة' : 'Please enter the school name' })
+      return
+    }
     if (!yearId.trim() && mode !== 'nationality') {  // nationality doesn't need a year
       setState({ status: 'error', error: t('err_no_year') })
       return
@@ -165,6 +170,26 @@ export default function Upload({ lang }: UploadProps) {
             sections,
           },
         })
+      } else if (mode === 'partial') {
+        const { records, errors } = parsePartialSchoolFile(buffer, yearId.trim(), partialSchoolName.trim())
+        if (records.length === 0 && errors.length > 0) {
+          setState({ status: 'error', error: errors.join('\n') })
+          return
+        }
+        dataStore.importExternalRecords(yearId.trim(), records)
+        const sections = [...new Set(records.map(r => `${r.grade}/${r.section}`))]
+        setState({
+          status: 'success',
+          result: {
+            yearId: yearId.trim(),
+            totalRows: records.length,
+            imported: records.length,
+            skipped: 0,
+            errors,
+            subjects: [...new Set(records.flatMap(r => Object.keys(r.grades)))] as any,
+            sections,
+          },
+        })
       } else {
         const map = parseNationalityFile(buffer)
         // Re-apply to all years
@@ -216,6 +241,7 @@ export default function Upload({ lang }: UploadProps) {
     { key: 'formative', label: lang === 'ar' ? 'التقويم التكويني' : 'Formative' },
     { key: 'exam', label: lang === 'ar' ? 'درجات الاختبار' : 'Exam Scores' },
     { key: 'term', label: lang === 'ar' ? 'درجات الفصل' : 'Term Scores' },
+    { key: 'partial', label: lang === 'ar' ? 'بيانات خارجية' : 'External Data' },
   ]
 
   return (
@@ -266,10 +292,32 @@ export default function Upload({ lang }: UploadProps) {
               </select>
             </div>
           )}
+          {mode === 'partial' && (
+            <div>
+              <label className="label">{lang === 'ar' ? 'اسم المدرسة' : 'School Name'}</label>
+              <input
+                type="text"
+                className="input max-w-xs"
+                placeholder={lang === 'ar' ? 'مثال: مدرسة الأمل' : 'e.g. Al Amal School'}
+                value={partialSchoolName}
+                onChange={e => setPartialSchoolName(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Partial mode info banner */}
+      {mode === 'partial' && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3 text-sm text-blue-800 dark:text-blue-300">
+          {lang === 'ar'
+            ? 'رفع بيانات جزئية من مدرسة خارجية (صفوف 4-9، المواد الأربعة: عربي، إنجليزي، رياضيات، علوم). يتم دمج البيانات مع بيانات خالد بن الوليد ويمكن الفلترة حسب المصدر.'
+            : 'Upload partial data from an external school (grades 4-9, four subjects: Arabic, English, Math, Science). Data is merged and can be filtered by source school.'}
         </div>
       )}
 
       {/* Template download */}
+      {mode !== 'partial' && (
       <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 rounded-lg px-4 py-3">
         <div>
           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -294,6 +342,7 @@ export default function Upload({ lang }: UploadProps) {
           {lang === 'ar' ? 'تنزيل' : 'Download'}
         </button>
       </div>
+      )}
 
       {/* Drop zone */}
       <div
